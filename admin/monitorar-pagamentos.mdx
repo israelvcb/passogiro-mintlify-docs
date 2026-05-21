@@ -1,0 +1,86 @@
+---
+title: "Monitorar Pagamentos"
+description: "Como acompanhar transações, webhooks e resolver problemas de pagamento."
+---
+
+# Monitorar Pagamentos
+
+## Dashboard de transações
+
+Em **Admin → Pagamentos**, você tem visibilidade completa de todas as transações da plataforma.
+
+## Métricas globais
+
+| Métrica | Descrição |
+|---------|-----------|
+| Total processado (hoje/semana/mês) | Volume financeiro total |
+| Total por gateway | Woovi vs Asaas |
+| Taxa de sucesso | % de pagamentos aprovados vs tentados |
+| Em liquidação | Valor de cartão ainda em hold |
+| Disponível líquido total | Soma do saldo disponível de todos os organizadores |
+
+## Listagem de transações
+
+Cada transação exibe:
+
+- ID interno e ID do gateway
+- Organizador e evento
+- Atleta e inscrição
+- Valor bruto, taxa, valor líquido
+- Gateway utilizado e método (PIX/cartão)
+- Status do pagamento (`PAID`, `PENDING`, `FAILED`, etc.)
+- Status de liquidação (`IMMEDIATE`, `PENDING`, `CLEARED`)
+- Data/hora
+
+## Filtros
+
+| Filtro | Opções |
+|--------|--------|
+| Gateway | Woovi, Asaas |
+| Status | Pago, Pendente, Falhou, Reembolsado |
+| Liquidação | Imediata, Pendente, Liquidada |
+| Organizador | Busca por nome |
+| Período | Intervalo de datas |
+| Valor | Faixa de valores |
+
+## Logs de webhooks
+
+Para cada transação, você pode ver o histórico completo de webhooks recebidos:
+
+1. Clique em uma transação
+2. Acesse a aba **Webhooks**
+3. Veja cada evento recebido:
+   - Timestamp
+   - Payload completo
+   - Status de processamento (sucesso/erro)
+   - Tentativas de reprocessamento
+
+### Reprocessar webhook manualmente
+
+Se um webhook falhou e o status da inscrição não foi atualizado:
+
+1. No log de webhooks, clique em **Reprocessar**
+2. O sistema reaplica a lógica de processamento com o payload original
+3. O status da inscrição é atualizado se o pagamento era válido
+
+<Warning>
+O reprocessamento tem proteção contra duplo processamento — se o pagamento já foi confirmado anteriormente, a operação é ignorada com segurança.
+</Warning>
+
+## Alertas automáticos
+
+O sistema envia alertas para a equipe admin quando:
+
+- Taxa de falha de pagamentos ultrapassa 10% em 1 hora
+- Webhook de um pagamento não chega em 5 minutos após criação
+- Saldo negativo em conta de organizador (não deveria ocorrer, mas é monitorado)
+- Tentativa de processamento duplicado detectada
+
+## Investigando um pagamento específico
+
+Para investigar um pagamento específico reportado por um atleta ou organizador:
+
+1. Busque pelo e-mail do atleta ou ID da inscrição
+2. Veja o histórico completo de status
+3. Confira os webhooks recebidos
+4. Se necessário, consulte diretamente no painel do gateway (Woovi/Asaas) com o ID da transação do gateway

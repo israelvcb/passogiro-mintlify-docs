@@ -1,0 +1,66 @@
+---
+title: "Aprovar Saques"
+description: "Como revisar e processar solicitações de saque dos organizadores."
+---
+
+# Aprovar Saques
+
+## Fila de saques pendentes
+
+Em **Admin → Saques**, você vê todas as solicitações pendentes de aprovação. Para cada solicitação:
+
+| Campo | Descrição |
+|-------|-----------|
+| Organizador | Nome e CNPJ/CPF |
+| Evento | Qual evento originou os fundos |
+| Valor solicitado | Quantia pedida pelo organizador |
+| Saldo disponível | Saldo líquido total disponível do organizador |
+| Data da solicitação | Quando o saque foi pedido |
+| Dados bancários | Conta de destino |
+
+## Processo de aprovação
+
+### 1. Verificar elegibilidade
+
+Antes de aprovar, verifique:
+
+- O saldo disponível é suficiente para o valor solicitado
+- Os dados bancários estão corretos e pertencem ao organizador
+- Não há disputas ou chargebacks pendentes no período
+- A conta do organizador está ativa (não suspensa)
+
+### 2. Aprovar o saque
+
+1. Clique em **Revisar** na solicitação
+2. Confira os dados bancários e o valor
+3. Clique em **Aprovar**
+4. O sistema registra a aprovação e notifica o organizador
+
+### 3. Processar a transferência
+
+Após aprovação, a transferência bancária é realizada pelo time financeiro:
+
+1. Realize a TED/PIX para a conta informada
+2. Retorne ao painel e clique em **Marcar como pago**
+3. Informe o comprovante ou código de transação
+4. Salve
+
+O organizador recebe notificação por e-mail de que o saque foi processado.
+
+## Recusar um saque
+
+Se necessário recusar a solicitação:
+
+1. Clique em **Revisar** → **Recusar**
+2. Informe obrigatoriamente o **motivo da recusa**
+3. Confirme
+
+O organizador é notificado por e-mail com o motivo e pode fazer nova solicitação após corrigir o problema.
+
+## Saques automáticos
+
+Para organizadores com histórico confiável, é possível configurar aprovação automática abaixo de determinado valor. Entre em contato com a equipe técnica para habilitar essa configuração.
+
+## Auditoria de saques
+
+Todo o histórico de saques (aprovados, recusados, pagos) fica em **Admin → Saques → Histórico**, com filtros por organizador, período e status.

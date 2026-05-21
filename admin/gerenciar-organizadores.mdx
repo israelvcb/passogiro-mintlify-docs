@@ -1,0 +1,66 @@
+---
+title: "Gerenciar Organizadores"
+description: "Como aprovar, auditar e gerenciar contas de organizadores na plataforma."
+---
+
+# Gerenciar Organizadores
+
+## Listagem de organizadores
+
+Em **Admin → Organizadores**, você vê todos os organizadores cadastrados com:
+
+- Nome e dados de contato
+- Status da conta (pendente, ativo, suspenso)
+- Total de eventos criados
+- Total arrecadado na plataforma
+- Data do cadastro
+
+## Aprovando um novo organizador
+
+Quando um organizador se cadastra, a conta fica com status **Pendente** até aprovação:
+
+1. Acesse **Admin → Organizadores → Pendentes**
+2. Clique no organizador para ver seus dados completos
+3. Verifique:
+   - Dados cadastrais (CNPJ/CPF, telefone, e-mail)
+   - Histórico de eventos (se aplicável)
+4. Clique em **Aprovar** ou **Recusar**
+5. Se recusar, informe o motivo — o organizador receberá e-mail com a justificativa
+
+## Perfil do organizador
+
+Ao clicar em um organizador ativo, você acessa:
+
+- **Dados cadastrais** — informações da conta
+- **Gateways configurados** — quais gateways de pagamento estão ativos
+- **Eventos** — todos os eventos criados (rascunho, publicado, encerrado)
+- **Financeiro** — resumo de receitas e saques
+- **Equipe** — membros auxiliares adicionados
+
+## Suspender ou desativar conta
+
+Para suspender um organizador (bloquear novos eventos e inscrições):
+
+1. Acesse o perfil do organizador
+2. Clique em **Suspender conta**
+3. Informe o motivo
+4. Confirme
+
+Eventos existentes com inscrições abertas continuam funcionando. Novos eventos não podem ser criados.
+
+## Intervir em eventos
+
+Como administrador, você pode acessar qualquer evento de qualquer organizador para:
+
+- Ver inscrições e dados financeiros
+- Cancelar o evento em casos extremos
+- Ajustar configurações de gateway
+- Ver logs de webhooks e transações
+
+## Auditoria de atividade
+
+Todas as ações administrativas são registradas em log com:
+- Data e hora
+- Administrador responsável
+- Ação realizada
+- Objeto afetado (organizador, evento, inscrição)

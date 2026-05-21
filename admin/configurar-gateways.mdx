@@ -1,0 +1,71 @@
+---
+title: "Configurar Gateways de Pagamento"
+description: "Como vincular gateways de pagamento PIX e cartão para os organizadores."
+---
+
+# Configurar Gateways de Pagamento
+
+## Gateways disponíveis
+
+O Passo Giro suporta dois gateways:
+
+| Gateway | Métodos | Uso |
+|---------|---------|-----|
+| **Woovi** | PIX | Pagamentos instantâneos via QR Code |
+| **Asaas** | Cartão de crédito | Checkout com parcelamento |
+
+Cada organizador pode ter um ou ambos os gateways configurados.
+
+## Configurando o Woovi (PIX)
+
+1. Acesse **Admin → Organizadores → [nome do organizador] → Gateways**
+2. Clique em **Configurar Woovi**
+3. Preencha as credenciais da conta Woovi do organizador:
+   - **API Key** — chave de API da conta Woovi
+   - **Webhook Secret** — chave para validação de webhooks
+4. Clique em **Salvar e Testar**
+5. O sistema faz uma chamada de teste para validar as credenciais
+6. Se válido, o gateway fica com status **Ativo**
+
+<Info>
+O organizador precisa ter uma conta Woovi própria. As credenciais são fornecidas pelo painel da Woovi em app.woovi.com.
+</Info>
+
+## Configurando o Asaas (Cartão)
+
+1. Acesse **Admin → Organizadores → [nome do organizador] → Gateways**
+2. Clique em **Configurar Asaas**
+3. Preencha:
+   - **API Key** — chave de API da conta Asaas
+   - **Ambiente** — Produção ou Sandbox (para testes)
+   - **Antecipação automática** — se ativado, os recebimentos são antecipados (~2 dias úteis). Se desativado, o hold é de ~32 dias
+4. Clique em **Salvar e Testar**
+5. Aguarde validação e confirmação de status **Ativo**
+
+## Fluxo de roteamento de pagamentos
+
+Quando um atleta seleciona a forma de pagamento, o sistema (`PaymentRoutingService`) resolve qual gateway usar:
+
+```
+Atleta escolhe PIX → Woovi do organizador
+Atleta escolhe Cartão → Asaas do organizador
+```
+
+Se o organizador não tiver um gateway configurado para determinado método, essa opção não aparece para o atleta durante a inscrição.
+
+## Testando o gateway
+
+Após configurar, você pode realizar uma inscrição de teste no ambiente de sandbox:
+
+1. Crie um evento de teste com preço baixo
+2. Faça uma inscrição usando conta de atleta de teste
+3. Complete o pagamento
+4. Verifique se o webhook foi recebido e o status da inscrição atualizou
+
+## Problemas comuns
+
+| Problema | Causa provável | Solução |
+|----------|---------------|---------|
+| Credenciais inválidas | API Key errada ou expirada | Verificar no painel do gateway |
+| Webhook não recebido | URL de webhook não configurada | Configurar URL no painel do gateway |
+| Pagamento aprovado mas inscrição não atualiza | Falha no processamento do webhook | Ver logs em [Monitorar Pagamentos](/admin/monitorar-pagamentos) |
