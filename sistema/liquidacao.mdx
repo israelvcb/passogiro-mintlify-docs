@@ -1,0 +1,100 @@
+---
+title: "Liquidação de Pagamentos"
+description: "Como funciona o período de hold e a liquidação de pagamentos PIX e cartão."
+---
+
+# Liquidação de Pagamentos
+
+## O que é liquidação
+
+Liquidação é o processo pelo qual o dinheiro de um pagamento se torna **disponível para saque** pelo organizador. Dependendo do método de pagamento, pode ser imediata ou ter um período de espera (hold).
+
+## Status de liquidação
+
+| Status | Descrição |
+|--------|-----------|
+| `NOT_APPLICABLE` | Sem pagamento (inscrições cortesia) |
+| `IMMEDIATE` | Liquidado imediatamente (PIX) |
+| `PENDING` | Em período de hold (cartão, aguardando liquidação) |
+| `CLEARED` | Hold encerrado, valor disponível (cartão após hold) |
+
+---
+
+## PIX — Liquidação Imediata
+
+Pagamentos via PIX têm liquidação **instantânea**. Assim que o webhook de confirmação é recebido:
+
+- Status da inscrição: `PAID`
+- Status de liquidação: `IMMEDIATE`
+- O valor líquido é **imediatamente somado** ao saldo disponível do organizador
+- O organizador pode solicitar saque no mesmo instante
+
+---
+
+## Cartão — Período de Hold
+
+Pagamentos via cartão (Asaas) passam por um período de hold antes de ficarem disponíveis. Isso ocorre porque a operadora de cartão pode fazer estorno (chargeback) dentro de certo prazo.
+
+### Com antecipação habilitada
+
+Quando o organizador tem a antecipação automática ativada no Asaas:
+
+- Hold: **~2 dias úteis**
+- O Asaas antecipa o recebimento cobrando uma taxa adicional de antecipação
+- Essa taxa é embutida no gross-up pago pelo atleta
+
+### Sem antecipação
+
+Quando a antecipação está desativada:
+
+- Hold: **~32 dias** (prazo padrão do cartão)
+- Sem taxa adicional de antecipação
+- O valor fica como `PENDING` por mais tempo
+
+### Fluxo do cartão com hold
+
+```
+Pagamento confirmado
+        ↓
+clearanceStatus = PENDING
+Valor somado a: totalPendingClearance
+        ↓
+Período de hold transcorre
+        ↓
+Webhook de liquidação recebido do Asaas
+        ↓
+clearanceStatus = CLEARED
+Valor movido de: totalPendingClearance → totalNetReceived
+Organizador pode sacar o valor
+```
+
+---
+
+## Conta financeira do evento (EventAccount)
+
+Cada evento tem uma conta financeira com os seguintes campos:
+
+| Campo | Descrição |
+|-------|-----------|
+| `totalReceived` | Soma bruta de todos os pagamentos confirmados |
+| `totalPendingClearance` | Valor de cartão ainda em hold |
+| `totalNetReceived` | Valor já liquidado e disponível (PIX imediato + cartão após hold) |
+| `totalWithdrawn` | Total já sacado pelo organizador |
+
+### Saldo disponível para saque
+
+```
+saldo disponível = totalNetReceived - totalWithdrawn
+```
+
+---
+
+## Reembolsos e impacto na liquidação
+
+Quando uma inscrição é reembolsada:
+
+- O valor é estornado ao atleta pelo gateway
+- O `totalNetReceived` é reduzido pelo valor líquido da inscrição
+- Se o valor já foi sacado, o organizador fica com saldo negativo até compensar
+
+Reembolsos são sempre coordenados com o administrador da plataforma.

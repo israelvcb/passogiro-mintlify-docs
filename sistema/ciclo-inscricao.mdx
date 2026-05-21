@@ -1,0 +1,118 @@
+---
+title: "Ciclo de Vida da Inscrição"
+description: "Todos os estados possíveis de uma inscrição e as transições entre eles."
+---
+
+# Ciclo de Vida da Inscrição
+
+## Estados da inscrição
+
+Uma inscrição passa por diferentes estados ao longo do seu ciclo de vida:
+
+| Estado | Descrição |
+|--------|-----------|
+| `PENDING` | Inscrição iniciada, nenhuma cobrança gerada ainda |
+| `AWAITING_PAYMENT` | Cobrança criada no gateway, aguardando pagamento |
+| `PAID` | Pagamento confirmado — inscrição ativa |
+| `COURTESY` | Cupom de cortesia aplicado — inscrição ativa sem pagamento |
+| `AWAITING_CATEGORY_CHANGE` | Troca de categoria solicitada, aguardando pagamento da diferença |
+| `CANCELLED` | Inscrição cancelada pelo organizador ou atleta |
+| `REFUNDED` | Pagamento estornado ao atleta |
+| `EXPIRED` | Prazo de pagamento encerrou sem confirmação |
+
+---
+
+## Diagrama de transições
+
+```
+PENDING
+  └─→ AWAITING_PAYMENT (cobrança criada)
+        ├─→ PAID (pagamento confirmado via webhook)
+        └─→ EXPIRED (prazo expirou sem pagamento)
+
+PENDING
+  └─→ COURTESY (cupom FREE aplicado, sem cobrança)
+
+PAID
+  ├─→ AWAITING_CATEGORY_CHANGE (troca de categoria solicitada)
+  │     ├─→ PAID (diferença paga)
+  │     └─→ PAID (sem diferença — nova categoria mesma preço ou menor)
+  ├─→ CANCELLED (cancelamento pelo organizador)
+  └─→ REFUNDED (reembolso processado)
+
+COURTESY
+  └─→ CANCELLED (cancelamento pelo organizador)
+```
+
+---
+
+## PENDING → AWAITING_PAYMENT
+
+Quando o atleta escolhe a forma de pagamento e confirma, o sistema:
+
+1. Cria a cobrança no gateway (Woovi ou Asaas)
+2. Armazena o `externalPaymentId` (ID no gateway)
+3. Atualiza o status para `AWAITING_PAYMENT`
+4. Retorna o QR Code (PIX) ou URL de checkout (Cartão)
+
+---
+
+## AWAITING_PAYMENT → PAID
+
+Ocorre quando o webhook do gateway confirma o pagamento:
+
+1. Gateway processa o pagamento do atleta
+2. Envia webhook POST ao endpoint do Passo Giro
+3. Sistema valida a assinatura do webhook
+4. Verifica idempotência (status atual deve ser `AWAITING_PAYMENT`)
+5. Atualiza status para `PAID`
+6. Dispara e-mail de confirmação ao atleta
+7. Atualiza saldo financeiro do evento
+
+---
+
+## AWAITING_PAYMENT → EXPIRED
+
+Se o prazo de pagamento passar sem confirmação:
+
+- **PIX**: expira em **30 minutos** (controlado pelo gateway Woovi)
+- **Cartão**: expira conforme configuração da sessão Asaas
+
+Quando o gateway cancela a cobrança, envia webhook de expiração. O sistema atualiza o status para `EXPIRED`. A vaga na categoria é **liberada** automaticamente.
+
+---
+
+## PAID → AWAITING_CATEGORY_CHANGE
+
+Quando o atleta solicita troca de categoria:
+
+1. Um registro `CategoryChange` é criado
+2. Status da inscrição vai para `AWAITING_CATEGORY_CHANGE`
+3. Se houver diferença de valor a pagar, nova cobrança é gerada
+4. `correlationId` = `{registrationId}-change-{changeId}`
+5. Após pagamento confirmado, status volta para `PAID` na nova categoria
+
+Se não houver diferença de valor (nova categoria tem preço igual ou menor), a troca é processada imediatamente sem nova cobrança.
+
+---
+
+## PAID → CANCELLED / REFUNDED
+
+- **CANCELLED**: Organizador cancela a inscrição (sem devolução de valor)
+- **REFUNDED**: Reembolso processado — valor devolvido ao atleta via gateway
+
+O reembolso é coordenado pelo administrador da plataforma e requer aprovação.
+
+---
+
+## EXPIRED → nova inscrição
+
+Após expirar, o atleta pode se inscrever novamente. Uma nova inscrição é criada do zero, com o preço do **lote vigente** na data da nova inscrição. A inscrição expirada não é reativada.
+
+---
+
+## Inscrições simultâneas
+
+O sistema permite apenas uma inscrição ativa por evento por atleta. Se o atleta tentar se inscrever novamente num mesmo evento com inscrição ativa (`PAID`, `COURTESY`, `AWAITING_PAYMENT`), o sistema bloqueia e apresenta mensagem de erro.
+
+Inscrições com status `EXPIRED` ou `CANCELLED` não contam como ativas.

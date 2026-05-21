@@ -1,0 +1,140 @@
+---
+title: "Taxas e Cálculos"
+description: "Como são calculadas as taxas de plataforma e gateway para cada inscrição."
+---
+
+# Taxas e Cálculos
+
+## Componentes do valor de uma inscrição
+
+Para cada inscrição paga, o `FeeEngine` (motor de cálculo de taxas) decompõe o valor em:
+
+| Campo | Descrição |
+|-------|-----------|
+| `basePriceCents` | Preço base definido no lote |
+| `discountCents` | Desconto aplicado por cupom |
+| `effectiveBaseCents` | Base após desconto (`base - desconto`) |
+| `platformFeeCents` | Taxa da plataforma Passo Giro |
+| `gatewayFeeCents` | Taxa do gateway de pagamento |
+| `payerTotalCents` | Valor total que o atleta paga |
+| `organizerNetCents` | Valor líquido que o organizador recebe |
+
+---
+
+## Pagamento via PIX
+
+No PIX, **não há gross-up** — as taxas são descontadas do valor que o organizador recebe:
+
+```
+Valor base: R$ 100,00
+Cupom: sem desconto
+effectiveBase = R$ 100,00
+
+Taxa plataforma (ex: 5%): R$ 5,00
+Taxa gateway PIX (ex: 0,99%): R$ 0,99
+
+payerTotal = R$ 100,00   ← atleta paga exatamente o valor base
+organizerNet = R$ 94,01  ← organizador recebe descontadas as taxas
+```
+
+O atleta **não vê nem paga** as taxas — elas são deduzidas do repasse ao organizador.
+
+---
+
+## Pagamento via Cartão — Gross-up
+
+No cartão, as taxas da operadora são mais altas e são **repassadas ao atleta** por meio do gross-up. O organizador sempre recebe o `effectiveBase` integralmente.
+
+### Fórmula do gross-up
+
+```
+payerTotal = ceil((targetNet + taxaFixa) / (1 - %taxa - %antecipação))
+```
+
+Onde:
+- `targetNet` = `effectiveBaseCents` (o que o organizador deve receber)
+- `taxaFixa` = taxa fixa por transação do gateway (em centavos)
+- `%taxa` = percentual da taxa do cartão
+- `%antecipação` = percentual de antecipação (se habilitada)
+
+### Exemplo prático
+
+```
+Valor base: R$ 100,00
+Cupom: sem desconto
+targetNet = R$ 100,00
+
+Taxa cartão Asaas: 2,99% + R$ 0,49 fixo
+Antecipação: 0,5%
+
+payerTotal = ceil((10000 + 49) / (1 - 0,0299 - 0,005))
+           = ceil(10049 / 0,9651)
+           = ceil(10413,9...)
+           = R$ 104,14
+
+organizerNet = R$ 100,00   ← sempre igual ao effectiveBase
+platformFee = (parcela da taxa pertencente ao Passo Giro)
+gatewayFee = (parcela da taxa pertencente ao gateway)
+```
+
+O atleta vê o valor exato (`R$ 104,14`) **antes** de confirmar o pagamento.
+
+---
+
+## Cupons e o impacto nas taxas
+
+### Cupom percentual ou fixo
+
+O desconto reduz o `effectiveBase`, sobre o qual as taxas são recalculadas:
+
+```
+Valor base: R$ 100,00
+Cupom: 20% de desconto
+effectiveBase = R$ 80,00
+
+Taxa plataforma (5%): R$ 4,00
+Taxa gateway PIX: R$ 0,79
+
+payerTotal (PIX) = R$ 80,00
+organizerNet = R$ 75,21
+```
+
+### Cupom cortesia (100%)
+
+```
+Valor base: R$ 100,00
+Desconto: R$ 100,00
+effectiveBase = R$ 0,00
+
+Sem pagamento — inscrição confirmada como COURTESY
+payerTotal = R$ 0,00
+organizerNet = R$ 0,00
+```
+
+### Cupom FREE_WITH_FEE (gratuito + taxa)
+
+O valor base é zerado mas o atleta paga apenas as taxas de processamento:
+
+```
+Valor base: R$ 100,00
+Desconto base: R$ 100,00
+effectiveBase = R$ 0,00
+
+Taxa plataforma calculada sobre R$ 0,00 = R$ 0,00
+Taxa gateway = taxa mínima fixa (se houver)
+
+payerTotal = somente taxas fixas mínimas
+organizerNet = R$ 0,00
+```
+
+---
+
+## Parcelamento no cartão
+
+Com parcelamento, o gross-up considera o acréscimo de juros por parcela. O valor total no cartão aumenta conforme o número de parcelas. O detalhamento é exibido ao atleta antes de confirmar.
+
+---
+
+## Onde consultar as taxas configuradas
+
+As taxas exatas variam por organizador e são configuradas pelo administrador. Consulte o administrador da plataforma para saber as taxas aplicadas ao seu evento.

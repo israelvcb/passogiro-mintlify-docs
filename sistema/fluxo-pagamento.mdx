@@ -1,0 +1,118 @@
+---
+title: "Fluxo de Pagamento"
+description: "Como funciona o fluxo completo de pagamento no Passo Giro, do PIX ao cartão."
+---
+
+# Fluxo de Pagamento
+
+## Visão geral
+
+O Passo Giro suporta dois métodos de pagamento: **PIX** (via Woovi) e **cartão de crédito** (via Asaas). O roteamento é feito automaticamente com base no método escolhido pelo atleta e no gateway configurado para o organizador.
+
+## Método 1: PIX (Woovi)
+
+```
+Atleta escolhe PIX
+        ↓
+Sistema cria cobrança na Woovi
+        ↓
+QR Code exibido na tela (validade: 30 min)
+        ↓
+Atleta paga no app do banco
+        ↓
+Woovi envia webhook ao Passo Giro
+        ↓
+Sistema confirma inscrição → status: PAGO
+        ↓
+Atleta recebe e-mail de confirmação
+        ↓
+Valor disponível para saque imediatamente (liquidação IMEDIATA)
+```
+
+### Expiração do PIX
+
+Se o atleta não pagar dentro de 30 minutos, a cobrança expira na Woovi e a inscrição fica como **Expirada**. O atleta pode iniciar uma nova inscrição e pagar o preço do lote vigente naquele momento.
+
+---
+
+## Método 2: Cartão de Crédito (Asaas)
+
+```
+Atleta escolhe cartão
+        ↓
+Sistema cria sessão de checkout no Asaas
+        ↓
+Atleta é redirecionado para página de pagamento Asaas
+        ↓
+Atleta preenche dados do cartão e confirma
+        ↓
+Asaas processa o pagamento
+        ↓
+Asaas envia webhook ao Passo Giro
+        ↓
+Sistema confirma inscrição → status: PAGO
+        ↓
+Atleta retorna ao Passo Giro e vê confirmação
+        ↓
+Valor fica em HOLD (liquidação PENDENTE)
+        ↓
+Após período de hold → status: LIQUIDADO
+        ↓
+Valor disponível para saque
+```
+
+### Parcelamento
+
+Com cartão, o atleta pode parcelar conforme configuração do evento. O valor total cobrado no cartão é ligeiramente maior que o valor base, pois as taxas do gateway são repassadas ao comprador via **gross-up** (veja [Taxas e Cálculos](/sistema/taxas-calculos)).
+
+---
+
+## Roteamento de pagamentos
+
+O `PaymentRoutingService` resolve qual gateway usar para cada método:
+
+| Método escolhido | Gateway |
+|-----------------|---------|
+| PIX | Woovi (configurado para o organizador) |
+| Cartão | Asaas (configurado para o organizador) |
+
+Se o organizador não tiver um gateway configurado para o método, a opção não é exibida para o atleta.
+
+---
+
+## Idempotência de webhooks
+
+O sistema tem proteção contra processamento duplicado. Ao receber um webhook:
+
+1. Verifica o status atual da inscrição
+2. Se já está `PAID` ou `COURTESY`, ignora o webhook
+3. Se está `AWAITING_PAYMENT`, processa e confirma
+
+Isso garante que mesmo que o gateway envie o mesmo webhook mais de uma vez, a inscrição não será confirmada duas vezes.
+
+---
+
+## Correlação de pagamentos
+
+Cada pagamento tem um `correlationId` que identifica o que está sendo pago:
+
+| Tipo | Formato do correlationId |
+|------|--------------------------|
+| Inscrição nova | `{registrationId}` |
+| Troca de categoria | `{registrationId}-change-{changeId}` |
+
+O `correlationId` é usado nos webhooks para localizar e atualizar a inscrição correta.
+
+---
+
+## Status de inscrição vs status de pagamento
+
+| Ação | Status da inscrição |
+|------|---------------------|
+| Inscrição criada, pagamento não iniciado | `PENDING` |
+| Cobrança criada, aguardando pagamento | `AWAITING_PAYMENT` |
+| Pagamento confirmado | `PAID` |
+| Cupom 100% sem pagamento | `COURTESY` |
+| Prazo expirou sem pagamento | `EXPIRED` |
+| Inscrição cancelada | `CANCELLED` |
+| Valor devolvido ao atleta | `REFUNDED` |

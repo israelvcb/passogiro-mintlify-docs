@@ -1,0 +1,114 @@
+---
+title: "Troca de Categoria"
+description: "Como funciona a troca de categoria após a inscrição e as regras envolvidas."
+---
+
+# Troca de Categoria
+
+## O que é a troca de categoria
+
+Após confirmada a inscrição, o atleta pode solicitar trocar para uma categoria diferente dentro do mesmo evento, desde que:
+
+- O organizador tenha habilitado a opção de troca de categoria
+- O prazo para troca não tenha encerrado
+- A nova categoria esteja dentro das restrições de idade e gênero do atleta
+- Haja vagas disponíveis na nova categoria
+
+---
+
+## Fluxo de troca de categoria
+
+```
+Atleta solicita troca de categoria
+        ↓
+Sistema valida elegibilidade para a nova categoria
+        ↓
+Calcula diferença de valor:
+  diff = preço_nova_categoria - preço_categoria_atual
+        ↓
+┌─────────────────────────────────────────────────────┐
+│ diff > 0 (nova categoria mais cara)                  │
+│   → Gera cobrança pela diferença                     │
+│   → correlationId: {registrationId}-change-{changeId}│
+│   → Status: AWAITING_CATEGORY_CHANGE                 │
+│   → Atleta paga a diferença (PIX ou Cartão)          │
+│   → Após pagamento: status volta para PAID           │
+└─────────────────────────────────────────────────────┘
+        ou
+┌─────────────────────────────────────────────────────┐
+│ diff <= 0 (nova categoria igual ou mais barata)      │
+│   → Troca processada imediatamente                   │
+│   → Sem novo pagamento                               │
+│   → Sem reembolso da diferença                       │
+│   → Status permanece PAID                            │
+└─────────────────────────────────────────────────────┘
+        ↓
+Inscrição atualizada com nova categoria
+Dorsal pode ser reatribuído (conforme regras do evento)
+```
+
+---
+
+## Cálculo da diferença de valor
+
+A diferença é calculada com base no **preço do lote vigente** de cada categoria no momento da solicitação de troca — não no preço originalmente pago:
+
+```
+diff = preçoLoteVigenteNovaCategoria - preçoLoteVigenteAtualCategoria
+```
+
+Se o atleta pagou R$ 80,00 na 1ª categoria (lote 1) e a 2ª categoria agora está no lote 3 (R$ 120,00), a diferença cobrada é R$ 40,00.
+
+<Warning>
+Trocas para categorias mais baratas **não geram reembolso** da diferença. O atleta simplesmente migra de categoria sem custo adicional.
+</Warning>
+
+---
+
+## Correlação do pagamento de troca
+
+Para que o sistema identifique corretamente qual troca está sendo paga, o `correlationId` do pagamento de diferença segue o formato:
+
+```
+{registrationId}-change-{changeId}
+```
+
+Isso permite que o webhook do gateway atualize a troca correta, mesmo que o atleta tenha múltiplas trocas em sequência.
+
+---
+
+## Status durante a troca
+
+Enquanto a cobrança da diferença está pendente:
+
+- Inscrição status: `AWAITING_CATEGORY_CHANGE`
+- Categoria antiga é mantida até confirmação
+- O atleta não pode iniciar nova troca enquanto há uma pendente
+
+Após confirmação do pagamento:
+- Status: `PAID`
+- Categoria atualizada para a nova
+- Dorsal pode mudar (conforme faixa configurada pelo organizador)
+
+---
+
+## Configurações do organizador
+
+O organizador pode configurar:
+
+| Configuração | Descrição |
+|-------------|-----------|
+| Permitir troca | Liga/desliga a funcionalidade para o evento |
+| Data limite | Prazo final para solicitação de troca |
+| Restrições de categoria | Se apenas trocas dentro da mesma distância são permitidas |
+
+---
+
+## Impacto financeiro
+
+A troca de categoria pode gerar uma cobrança adicional. Essa cobrança:
+
+- Segue as mesmas taxas do pagamento original
+- É processada pelo mesmo gateway
+- Aparece como transação separada no painel financeiro do organizador
+- O `correlationId` diferenciado permite identificar o pagamento como troca vs inscrição nova

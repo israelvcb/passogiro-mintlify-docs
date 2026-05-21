@@ -1,0 +1,112 @@
+---
+title: "Cupons — Regras do Sistema"
+description: "Regras completas de funcionamento dos cupons de desconto no Passo Giro."
+---
+
+# Cupons — Regras do Sistema
+
+## Tipos de cupom
+
+O sistema suporta quatro tipos, cada um com comportamento distinto no cálculo do pagamento:
+
+### PERCENT — Desconto percentual
+
+Aplica um percentual de desconto sobre o `effectiveBase` (valor base do lote).
+
+```
+effectiveBase = basePriceCents - (basePriceCents * percentual / 100)
+```
+
+**Exemplo:** Inscrição de R$ 100,00 com cupom de 30%
+- `effectiveBase` = R$ 70,00
+- Taxas calculadas sobre R$ 70,00
+- Atleta paga R$ 70,00 + taxas (PIX: incluso; Cartão: acrescido via gross-up)
+
+### FIXED — Desconto em valor fixo
+
+Desconta um valor fixo em reais do `basePriceCents`.
+
+```
+effectiveBase = basePriceCents - valorFixo
+```
+
+O resultado nunca fica negativo — se o valor fixo for maior que o preço base, `effectiveBase` é zerado (equivale a FREE).
+
+**Exemplo:** Inscrição de R$ 100,00 com cupom de R$ 25,00
+- `effectiveBase` = R$ 75,00
+
+### FREE — Cortesia total (100%)
+
+Zera completamente o valor. Não há cobrança — nem valor base, nem taxas.
+
+```
+effectiveBase = 0
+payerTotal = 0
+```
+
+A inscrição é confirmada imediatamente com status `COURTESY`. Não passa pelo fluxo de pagamento.
+
+### FREE_WITH_FEE — Gratuito com taxa
+
+Zera o valor base mas mantém a cobrança das taxas de processamento mínimas.
+
+```
+effectiveBase = 0
+payerTotal = taxaFixaGateway (se houver)
+```
+
+O atleta paga apenas o custo mínimo do gateway para processar a transação. O organizador recebe R$ 0,00 — o pagamento cobre apenas o custo operacional.
+
+---
+
+## Validação de cupom
+
+Quando o atleta aplica um cupom, o sistema verifica:
+
+1. **Código existe** — cupom com esse código existe no sistema
+2. **Pertence ao evento** — o cupom é válido para o evento em questão
+3. **Está ativo** — a flag `ativo` é verdadeira
+4. **Não expirou** — a data atual é anterior à `validade` do cupom
+5. **Tem cotas** — `usosRestantes > 0` (se limite de usos foi definido)
+6. **Categoria elegível** — a categoria selecionada está na lista de categorias elegíveis (ou a lista é vazia = todas as categorias)
+
+Se qualquer condição falhar, o sistema retorna erro e o cupom não é aplicado.
+
+---
+
+## Consumo de cotas
+
+O limite de usos é decrementado **no momento da confirmação do pagamento** (não no momento da aplicação do código). Isso evita que cotas sejam reservadas por inscrições que nunca são pagas.
+
+Fluxo:
+```
+Atleta aplica cupom → armazenado na inscrição (ainda não consome cota)
+Atleta paga → cota consumida
+Inscrição expira sem pagar → cota NÃO consumida
+```
+
+---
+
+## Interação com lotes de preço
+
+O desconto do cupom é aplicado sobre o preço do **lote vigente no momento da inscrição**. Se o lote mudar antes do pagamento, o preço com desconto já estava calculado e fixado na inscrição.
+
+---
+
+## Um cupom por inscrição
+
+Apenas um cupom pode ser aplicado por inscrição. Não há acúmulo de descontos.
+
+---
+
+## Cupons e o organizador
+
+Cupons do tipo FREE (cortesia) não geram receita para o organizador — o custo da participação é absorvido. Já cupons FREE_WITH_FEE geram um mínimo de cobertura de custos operacionais.
+
+Do ponto de vista do organizador, o impacto financeiro é:
+
+| Tipo de cupom | Receita do organizador |
+|---------------|----------------------|
+| PERCENT / FIXED | `effectiveBase` após desconto, menos taxas |
+| FREE | R$ 0,00 |
+| FREE_WITH_FEE | R$ 0,00 (atleta paga só as taxas) |
