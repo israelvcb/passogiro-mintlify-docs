@@ -63,7 +63,6 @@
             "group": "Configuração do Evento",
             "pages": [
               "organizadores/categorias-modalidades",
-              "organizadores/lotes-preco",
               "organizadores/cupons-desconto",
               "organizadores/locais-retirada-kit",
               "organizadores/camisetas-produtos"

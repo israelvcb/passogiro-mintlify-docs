@@ -51,13 +51,13 @@ Dorsal pode ser reatribuído (conforme regras do evento)
 
 ## Cálculo da diferença de valor
 
-A diferença é calculada com base no **preço do lote vigente** de cada categoria no momento da solicitação de troca — não no preço originalmente pago:
+A diferença é calculada com base no **preço atual de cada categoria** no momento da solicitação de troca — não no preço originalmente pago:
 
 ```
-diff = preçoLoteVigenteNovaCategoria - preçoLoteVigenteAtualCategoria
+diff = preçoNovaCategoriaAgora - preçoCategoriaAtualAgora
 ```
 
-Se o atleta pagou R$ 80,00 na 1ª categoria (lote 1) e a 2ª categoria agora está no lote 3 (R$ 120,00), a diferença cobrada é R$ 40,00.
+Se o atleta pagou R$ 80,00 na categoria A e a categoria B custa R$ 120,00, a diferença cobrada é R$ 40,00.
 
 <Warning>
 Trocas para categorias mais baratas **não geram reembolso** da diferença. O atleta simplesmente migra de categoria sem custo adicional.
