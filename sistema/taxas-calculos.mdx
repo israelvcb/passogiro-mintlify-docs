@@ -7,13 +7,13 @@ description: "Como o FeeEngine calcula taxas, modos de cobrança e gross-up para
 
 ## O que é o FeeEngine
 
-O `FeeEngine` é uma **função pura**: recebe inputs, calcula e retorna o breakdown sem efeitos colaterais. É a única fonte da verdade para qualquer valor monetário no sistema.
+O `FeeEngine` é uma **função pura**: recebe inputs e retorna o breakdown sem efeitos colaterais. É a única fonte da verdade para qualquer valor monetário no sistema.
 
 <Info>
 **Segurança:** o frontend nunca envia valores monetários. Ele envia apenas `registrationId`, `method`, `couponCode` e `installments`. O backend busca preços e taxas diretamente do banco e calcula tudo via FeeEngine.
 </Info>
 
-## Campos retornados pelo FeeEngine
+## Campos retornados
 
 | Campo | Descrição |
 |-------|-----------|
@@ -26,27 +26,27 @@ O `FeeEngine` é uma **função pura**: recebe inputs, calcula e retorna o break
 
 ---
 
-## Como o cálculo é feito
+## Algoritmo de cálculo
 
-```
+```javascript filename="fee-engine (pseudocódigo)" lines
 // 1. Aplicar cupom
 effectiveBase = max(0, precoBase − desconto)
 
-// 2. Caminho especial: FREE (cortesia total)
-se effectiveBase == 0 e chargeFeesAnyway == false
-  → payerTotal = 0, retornar imediatamente (status COURTESY)
+// 2. Caminho FREE — sem pagamento
+if (effectiveBase == 0 && !chargeFeesAnyway)
+  return { payerTotal: 0, status: COURTESY }
 
-// 3. Base de cálculo das taxas (feeBase)
+// 3. Base para cálculo de taxas
 feeCalcBase = (feeBase == PRE_DISCOUNT) ? precoBase : effectiveBase
 
-// 4. Taxa da plataforma (Fp) — depende do platformFeeMode:
-//   ABSORB:        payer = feeCalcBase           ; orgNet = effectiveBase − Fp
-//   PASS_TO_PAYER: payer = feeCalcBase + Fp      ; orgNet = effectiveBase
-//   FREE_WITH_FEE: payer = Fp (só taxas)         ; orgNet = 0
+// 4. Taxa de plataforma (Fp) — depende do platformFeeMode
+// ABSORB:        payer = feeCalcBase           orgNet = effectiveBase − Fp
+// PASS_TO_PAYER: payer = feeCalcBase + Fp      orgNet = effectiveBase
+// FREE_WITH_FEE: payer = Fp (só taxas)         orgNet = 0
 
-// 5. Gross-up para cartão (garante net-alvo após taxa do gateway)
-netNoAnt   = (antecipacao > 0) ? payer / (1 − antecipacao) : payer
-payerTotal = ceil( (netNoAnt + taxaFixaGateway) / (1 − taxaPercGateway) )
+// 5. Gross-up para cartão
+netNoAnt   = (anticipation > 0) ? payer / (1 − anticipation) : payer
+payerTotal = ceil((netNoAnt + gatewayFixed) / (1 − gatewayPercent))
 gatewayFee = payerTotal − payer
 ```
 
@@ -54,10 +54,8 @@ gatewayFee = payerTotal − payer
 
 ## platformFeeMode — Quem absorve a taxa
 
-Cada evento configura como a taxa da plataforma é cobrada:
-
-<CardGroup cols={2}>
-  <Card title="ABSORB — Organizador absorve">
+<Tabs>
+  <Tab title="ABSORB — Organizador absorve" icon="building">
     O atleta paga o valor efetivo. A taxa da plataforma sai do repasse ao organizador.
 
     ```
@@ -65,73 +63,116 @@ Cada evento configura como a taxa da plataforma é cobrada:
     orgNet = effectiveBase − Fp
     ```
 
-    Ex: Base R$50, Fp R$5 → atleta paga **R$50**, org recebe **R$45**
-  </Card>
-  <Card title="PASS_TO_PAYER — Repassa ao atleta">
-    A taxa é somada ao que o atleta paga. O organizador recebe o valor cheio.
+    **Exemplo:** Base R$50 · Fp R$5
+    - Atleta paga **R$50,00**
+    - Organizador recebe **R$45,00**
+
+    <Note>É o modo padrão (`DEFAULT_PLATFORM_FEE_MODE=ABSORB`). O atleta não vê a taxa.</Note>
+  </Tab>
+  <Tab title="PASS_TO_PAYER — Repassa ao atleta" icon="user">
+    A taxa é somada ao que o atleta paga. O organizador recebe o valor base cheio.
 
     ```
     payer  = effectiveBase + Fp
     orgNet = effectiveBase
     ```
 
-    Ex: Base R$50, Fp R$5 → atleta paga **R$55**, org recebe **R$50**
-  </Card>
-</CardGroup>
+    **Exemplo:** Base R$50 · Fp R$5
+    - Atleta paga **R$55,00**
+    - Organizador recebe **R$50,00**
+
+    <Note>A taxa aparece no checkout detalhado como "Taxa de serviço".</Note>
+  </Tab>
+</Tabs>
 
 ---
 
-## feeBase — Base de cálculo das taxas
+## feeBase — Onde a taxa incide
 
-Controla se o percentual de taxa incide sobre o preço **antes ou depois** do desconto do cupom:
+<Tabs>
+  <Tab title="POST_DISCOUNT (padrão)" icon="circle-check">
+    A taxa incide sobre o preço **já com o desconto** do cupom.
 
-| feeBase | Base usada | Efeito do cupom no total do atleta |
-|---------|-----------|-------------------------------------|
-| `POST_DISCOUNT` **(padrão)** | Preço já descontado | Cupom reduz o total normalmente |
-| `PRE_DISCOUNT` | Preço original (antes do cupom) | Cupom reduz só o net do organizador — total do atleta não muda |
+    ```
+    feeCalcBase = effectiveBase  (após cupom)
+    ```
 
-<Warning>
-`PRE_DISCOUNT` é um caso especial: mesmo com cupom, o atleta paga o mesmo valor. Use apenas quando o organizador quiser subsidiar o desconto do seu próprio repasse, sem alterar o preço cobrado ao atleta.
-</Warning>
+    O cupom reduz tanto o valor base quanto as taxas calculadas.
+
+    **Exemplo:** Base R$100 · Cupom 20% · Taxa 5% (PASS_TO_PAYER)
+    - effectiveBase = R$80,00
+    - Fp = R$4,00 (5% de R$80)
+    - Atleta paga **R$84,00**
+  </Tab>
+  <Tab title="PRE_DISCOUNT (especial)" icon="triangle-exclamation">
+    A taxa incide sobre o preço **original, antes do cupom**.
+
+    ```
+    feeCalcBase = precoBase  (antes do cupom)
+    ```
+
+    O cupom reduz apenas o `orgNet` — o total do atleta não muda.
+
+    **Exemplo:** Base R$100 · Cupom 20% · Taxa 5% (PASS_TO_PAYER)
+    - feeCalcBase = R$100,00
+    - Fp = R$5,00 (5% do preço original)
+    - Atleta paga **R$105,00** (igual a sem cupom!)
+    - Diferença do cupom absorvida pelo organizador
+
+    <Warning>Use apenas quando o organizador quiser subsidiar o desconto do seu próprio repasse sem alterar o preço cobrado ao atleta.</Warning>
+  </Tab>
+</Tabs>
 
 ---
 
 ## Gross-up para cartão
 
-No cartão, o gross-up garante que — após a Asaas deduzir sua taxa — a plataforma receba exatamente o `expectedNetCents` alvo. O atleta absorve o custo do gateway.
+No cartão, o gross-up garante que — após a Asaas deduzir sua taxa — a plataforma receba exatamente o `expectedNetCents` alvo:
 
 ```
-netNoAnt   = (antecipacao > 0) ? payer / (1 − antecipacao) : payer
-payerTotal = ceil( (netNoAnt + taxaFixaGateway) / (1 − taxaPercGateway) )
+netNoAnt   = (anticipation > 0) ? payer / (1 − anticipation) : payer
+payerTotal = ceil((netNoAnt + gatewayFixed) / (1 − gatewayPercent))
 gatewayFee = payerTotal − payer
 ```
 
-**Exemplo com Asaas 3,49% + R$0,49:**
+**Exemplo prático com Asaas (3,49% + R$0,49), sem antecipação:**
 
 ```
 payer alvo (PASS_TO_PAYER, base R$50 + Fp R$5,50) = R$55,50
-netNoAnt = 5550 / (1 − 0) = 5550  (sem antecipação)
-payerTotal = ceil((5550 + 49) / (1 − 0,0349))
-           = ceil(5599 / 0,9651)
-           ≈ R$ 57,60
 
-gatewayFee = 5760 − 5550 = R$ 2,10
+netNoAnt   = 5550                       (sem antecipação)
+payerTotal = ceil((5550 + 49) / 0,9651) = ceil(5803,6) = R$58,04
+gatewayFee = 5804 − 5550               = R$2,54
 ```
 
 ---
 
 ## Exemplos práticos
 
-Evento 5KM Feminino · Base R$50,00 · Taxa plataforma R$4,70 · Taxa PIX R$0,80 · Modo: **PASS_TO_PAYER** + **POST_DISCOUNT**
+<Callout icon="receipt" color="#16A34A">
+Evento 5KM Feminino · Base **R$50,00** · Taxa plataforma **R$4,70** · Taxa PIX **R$0,80** · Modo: **PASS\_TO\_PAYER** + **POST\_DISCOUNT**
+</Callout>
 
-| Cenário | Atleta paga | Org recebe |
-|---------|-------------|------------|
-| Sem cupom | R$50 + R$4,70 + R$0,80 = **R$55,50** | R$50,00 |
-| PCT15 (15% off) | R$42,50 + R$4,70 + R$0,80 = **R$48,00** | R$42,50 |
-| FIXO25 (R$25 off) | R$25,00 + R$4,70 + R$0,80 = **R$30,50** | R$25,00 |
-| FREE (cortesia total) | **R$0,00** — sem pagamento | R$0,00 |
-| FREE_WITH_FEE | R$4,70 + R$0,80 = **R$5,50** (só taxas) | R$0,00 |
-| Cartão 3× Asaas | ≈ **R$57,60** (gross-up incluso) | R$50,00 |
+<Tabs>
+  <Tab title="PIX">
+    | Cenário | Atleta paga | Org recebe |
+    |---------|-------------|------------|
+    | Sem cupom | R$50 + R$4,70 + R$0,80 = **R$55,50** | R$50,00 |
+    | PCT15 (15% off) | R$42,50 + R$4,70 + R$0,80 = **R$48,00** | R$42,50 |
+    | FIXO25 (R$25 off) | R$25,00 + R$4,70 + R$0,80 = **R$30,50** | R$25,00 |
+    | FREE (cortesia) | **R$0,00** — sem pagamento | R$0,00 |
+    | FREE_WITH_FEE | R$4,70 + R$0,80 = **R$5,50** | R$0,00 |
+  </Tab>
+  <Tab title="Cartão 3×">
+    | Cenário | Atleta paga (gross-up) | Org recebe |
+    |---------|------------------------|------------|
+    | Sem cupom | ≈ **R$58,04** | R$50,00 |
+    | PCT15 (15% off) | ≈ **R$49,44** | R$42,50 |
+    | FREE_WITH_FEE | paga só taxas (gross-up sobre Fp) | R$0,00 |
+
+    <Note>O valor exato do gross-up depende das taxas Asaas configuradas para o evento.</Note>
+  </Tab>
+</Tabs>
 
 ---
 
@@ -139,30 +180,31 @@ Evento 5KM Feminino · Base R$50,00 · Taxa plataforma R$4,70 · Taxa PIX R$0,80
 
 Cada evento pode ter regras próprias via `PaymentMethodConfig` + `PaymentFeeRule`. Se não houver configuração, o sistema usa os defaults de variáveis de ambiente.
 
-| Campo | O que define |
-|-------|-------------|
-| `method` | PIX ou CREDIT_CARD |
-| `gateway` | Qual gateway: `woovi`, `asaas` |
-| `platformFeeMode` | ABSORB ou PASS_TO_PAYER |
-| `platformFeeCents` | Taxa fixa em centavos (0 = usa `planRate` do evento) |
-| `gatewayPercent` | % do gateway (ex: `3.49` para Asaas cartão) |
-| `gatewayFixedCents` | Parte fixa do gateway em centavos (ex: `49`) |
-| `anticipationPercent` | % de antecipação por mês (Asaas). `0` = sem antecipação |
-| `feeBase` | POST_DISCOUNT (padrão) ou PRE_DISCOUNT |
-| `settlementHoldDays` | Dias de hold antes de liberar para saque (PIX=0, cartão≈32) |
+<Tabs>
+  <Tab title="Campos configuráveis">
+    | Campo | O que define |
+    |-------|-------------|
+    | `method` | `PIX` ou `CREDIT_CARD` |
+    | `gateway` | `woovi`, `asaas` |
+    | `platformFeeMode` | `ABSORB` ou `PASS_TO_PAYER` |
+    | `platformFeeCents` | Taxa fixa em centavos (`0` = usa `planRate` do evento) |
+    | `gatewayPercent` | % do gateway (ex: `3.49`) |
+    | `gatewayFixedCents` | Taxa fixa do gateway em centavos (ex: `49`) |
+    | `anticipationPercent` | % de antecipação (Asaas). `0` = sem antecipação |
+    | `feeBase` | `POST_DISCOUNT` (padrão) ou `PRE_DISCOUNT` |
+    | `settlementHoldDays` | Dias de hold antes de liberar para saque |
+  </Tab>
+  <Tab title="Defaults (env vars)">
+    | Variável | Valor padrão |
+    |----------|-------------|
+    | `PIX_PAYMENT_GATEWAY` | `woovi` |
+    | `CARD_PAYMENT_GATEWAY` | `asaas` |
+    | `DEFAULT_PLATFORM_FEE_MODE` | `ABSORB` |
+    | `DEFAULT_GATEWAY_FEE_BASE` | `POST_DISCOUNT` |
+    | `ASAAS_DEFAULT_MAX_INSTALLMENTS` | `1` |
+    | `ASAAS_DEFAULT_ANTICIPATION_PERCENT` | `0` |
+    | `ASAAS_DEFAULT_SETTLEMENT_HOLD_DAYS` | `32` |
 
-### Defaults (quando não há configuração no banco)
-
-| Variável de ambiente | Valor padrão |
-|----------------------|-------------|
-| `PIX_PAYMENT_GATEWAY` | `woovi` |
-| `CARD_PAYMENT_GATEWAY` | `asaas` |
-| `DEFAULT_PLATFORM_FEE_MODE` | `ABSORB` |
-| `DEFAULT_GATEWAY_FEE_BASE` | `POST_DISCOUNT` |
-| `ASAAS_DEFAULT_MAX_INSTALLMENTS` | `1` |
-| `ASAAS_DEFAULT_ANTICIPATION_PERCENT` | `0` |
-| `ASAAS_DEFAULT_SETTLEMENT_HOLD_DAYS` | `32` |
-
-<Info>
-Eventos sem configuração no banco se comportam exatamente como antes — PIX via Woovi, taxa via `planRate` do evento, organizador absorve. Nenhuma migração necessária.
-</Info>
+    <Check>Eventos sem configuração no banco se comportam exatamente como antes — nenhuma migração necessária.</Check>
+  </Tab>
+</Tabs>

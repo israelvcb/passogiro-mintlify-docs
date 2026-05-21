@@ -7,13 +7,19 @@ description: "Como visualizar, filtrar e gerenciar as inscrições do seu evento
 
 O painel de inscrições é o centro de controle das participações no seu evento.
 
-<img src="/images/organizador/aba_inscritos.png" alt="Painel de inscrições" />
+<Frame caption="Painel de inscritos com listagem, filtros e totais por status.">
+  <img src="/images/organizador/aba_inscritos.png" alt="Painel de inscrições" />
+</Frame>
 
 ## Acessando o painel
 
-1. No painel do evento, clique na aba **Inscritos**
+No painel do evento, clique na aba **Inscritos**.
 
 ## Visão geral
+
+<Frame caption="Dashboard com métricas gerais do evento.">
+  <img src="/images/organizador/aba_visao_geral.png" alt="Visão geral do evento" />
+</Frame>
 
 O painel exibe:
 - **Total de inscrições** por status
@@ -24,14 +30,14 @@ O painel exibe:
 
 | Filtro | Opções |
 |--------|--------|
-| Status | Pendente, Aguardando Pagamento, Pago, Cortesia, Cancelado, Expirado |
+| Status | <Badge color="yellow" size="xs">Pendente</Badge> <Badge color="orange" size="xs">Aguardando</Badge> <Badge color="green" size="xs">Pago</Badge> <Badge color="green" size="xs">Cortesia</Badge> <Badge color="red" size="xs">Cancelado</Badge> <Badge color="gray" size="xs">Expirado</Badge> |
 | Categoria | Filtra por categoria específica |
 | Gênero | Masculino, Feminino |
 | Cupom | Filtra inscrições que usaram determinado cupom |
-| Check-in | Realizou check-in / Não realizou |
+| Check-in | Realizou / Não realizou |
 | Kit retirado | Sim / Não |
 | Período | Data de inscrição |
-| Nome/CPF | Busca por texto |
+| Nome / CPF | Busca por texto |
 
 ## Detalhes de uma inscrição
 
@@ -52,29 +58,23 @@ Clique em qualquer inscrição para ver:
 | Confirmar pagamento manual | Inscrições aguardando pagamento |
 | Cancelar inscrição | Qualquer status ativo |
 | Reembolsar | Inscrições pagas |
-| Atribuir dorsal | Inscrições pagas/cortesia |
+| Atribuir dorsal | Inscrições pagas / cortesia |
 | Marcar kit retirado | Após check-in |
 
 ## Inscrições por status
 
-<img src="/images/organizador/aba_visao_geral.png" alt="Visão geral do evento" />
+### <Badge color="orange">Aguardando pagamento</Badge>
 
-### Aguardando pagamento
-Inscrições criadas mas sem pagamento confirmado. Expiram após 30 minutos (PIX) ou conforme configurado para cartão.
+Inscrições criadas mas sem pagamento confirmado. Expiram após 30 minutos (PIX) ou conforme configuração do cartão.
 
-### Pagas
+### <Badge color="green">Pagas</Badge>
+
 Inscrições com pagamento confirmado — participantes ativos.
 
-### Cortesia
+### <Badge color="green" icon="gift">Cortesia</Badge>
+
 Inscrições via cupom de 100% de desconto — sem fluxo de pagamento.
 
-### Canceladas / Expiradas
+### <Badge color="red">Canceladas</Badge> / <Badge color="gray">Expiradas</Badge>
+
 Inscrições encerradas. Não ocupam vagas.
-
-## Estatísticas
-
-Na aba **Visão Geral** do evento, você encontra gráficos com:
-- Inscrições por dia
-- Distribuição por categoria
-- Formas de pagamento utilizadas
-- Uso de cupons

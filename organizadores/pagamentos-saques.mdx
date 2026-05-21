@@ -7,15 +7,15 @@ description: "Como acompanhar os recebimentos e solicitar saques para sua conta 
 
 ## Visão financeira do evento
 
-No painel do evento, a aba **Financeiro** mostra o resumo financeiro completo:
-
-<img src="/images/organizador/aba_financeiro.png" alt="Aba financeira do evento" />
+<Frame caption="Aba financeira com totais, pendências e histórico de saques.">
+  <img src="/images/organizador/aba_financeiro.png" alt="Aba financeira do evento" />
+</Frame>
 
 | Indicador | Descrição |
 |-----------|-----------|
 | **Total Recebido** | Soma de todos os pagamentos confirmados (valor bruto) |
 | **Pendente de Liquidação** | Valor de cartão ainda em período de hold |
-| **Disponível Líquido** | Valor já liquidado menos taxas, disponível para saque |
+| **Disponível Líquido** | Valor já liquidado menos taxas — disponível para saque |
 | **Total Sacado** | Soma de todos os saques realizados |
 
 ## Entendendo as taxas
@@ -31,55 +31,56 @@ Veja o detalhamento completo em [Taxas e Cálculos](/sistema/taxas-calculos).
 
 ## Liquidação de pagamentos
 
-- **PIX**: liquidação **imediata** — valor disponível para saque no mesmo instante
-- **Cartão de crédito**: período de **hold** antes de ficar disponível
-  - Com antecipação: ~2 dias úteis
-  - Sem antecipação: ~32 dias
+<Tabs>
+  <Tab title="PIX" icon="bolt">
+    <Check>Liquidação **imediata** — valor disponível para saque no mesmo instante em que o pagamento é confirmado.</Check>
+  </Tab>
+  <Tab title="Cartão" icon="credit-card">
+    Período de **hold** antes de ficar disponível — padrão: **32 dias**.
 
-Veja mais em [Liquidação](/sistema/liquidacao).
+    O saldo fica em `totalPendingClearance` e é movido para `totalNetReceived` automaticamente após o hold via cron job.
+
+    Veja detalhes em [Liquidação](/sistema/liquidacao).
+  </Tab>
+</Tabs>
 
 ## Solicitando um saque
 
-1. No painel do evento, acesse **Financeiro**
-2. Clique em **Solicitar Saque**
-3. Informe o valor desejado (até o saldo disponível líquido)
-4. Confirme os dados bancários cadastrados
-5. Clique em **Confirmar solicitação**
-
-O saque é processado pelo time do Passo Giro e o valor é transferido para sua conta em até **5 dias úteis**.
+<Steps>
+  <Step title="Acessar o painel financeiro">
+    No painel do evento, acesse a aba **Financeiro**.
+  </Step>
+  <Step title="Clicar em 'Solicitar Saque'">
+    Informe o valor desejado (até o saldo disponível líquido).
+  </Step>
+  <Step title="Confirmar dados bancários">
+    Verifique a conta cadastrada e confirme a solicitação.
+  </Step>
+  <Step title="Aguardar aprovação">
+    O saque é revisado pelo time do Passo Giro e processado em até **5 dias úteis**.
+    Você será notificado por e-mail quando for concluído.
+  </Step>
+</Steps>
 
 <Info>
-Saques são sujeitos à aprovação do administrador da plataforma. Você será notificado por e-mail quando o saque for processado.
+Saques são sujeitos à aprovação do administrador da plataforma.
 </Info>
 
 ## Dados bancários
 
-Para receber saques, você precisa ter uma conta bancária cadastrada:
+Para receber saques, cadastre sua conta bancária em **Minha Conta → Dados Bancários**:
 
-1. Acesse **Minha Conta** → **Dados Bancários**
-2. Informe:
-   - Banco
-   - Agência
-   - Conta (corrente ou poupança)
-   - Tipo de chave PIX (opcional para saques mais rápidos)
-3. Salve
-
-## Histórico de saques
-
-Na aba **Financeiro**, o histórico mostra todos os saques realizados com:
-- Data da solicitação
-- Valor solicitado
-- Status (pendente, aprovado, pago, recusado)
-- Data do pagamento
+- Banco, agência e conta (corrente ou poupança)
+- Chave PIX (opcional — para saques mais rápidos)
 
 ## Auditoria de transações
 
-Para uma visão detalhada de cada transação individual:
+<Frame caption="Aba de auditoria com detalhamento por transação — valores brutos, taxas e status de liquidação.">
+  <img src="/images/organizador/aba_auditoria.png" alt="Aba de auditoria de transações" />
+</Frame>
 
-<img src="/images/organizador/aba_auditoria.png" alt="Aba de auditoria de transações" />
-
-Na aba **Auditoria**, cada pagamento mostra:
+Na aba **Auditoria**, cada transação mostra:
 - Atleta e inscrição
 - Valor bruto, taxa e valor líquido
 - Gateway utilizado
-- Status de liquidação
+- <Tooltip tip="clearanceStatus: IMMEDIATE (PIX), PENDING (cartão em hold), CLEARED (cartão liquidado)">Status de liquidação</Tooltip>
