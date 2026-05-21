@@ -7,106 +7,118 @@ description: "Regras completas de funcionamento dos cupons de desconto no Passo 
 
 ## Tipos de cupom
 
-O sistema suporta quatro tipos, cada um com comportamento distinto no cálculo do pagamento:
+O sistema suporta quatro tipos, definidos pelo campo `discountType` do modelo `EventCoupon`:
 
-### PERCENT — Desconto percentual
+<CardGroup cols={2}>
+  <Card title="PERCENT — Desconto percentual">
+    Desconta uma porcentagem do preço base.
 
-Aplica um percentual de desconto sobre o `effectiveBase` (valor base do lote).
+    ```
+    Base R$50 · Cupom 15%
+    Desconto = R$7,50
+    Atleta paga R$42,50 + taxas
+    ```
+  </Card>
+  <Card title="FIXED — Desconto valor fixo">
+    Desconta um valor fixo em reais do preço base.
 
-```
-effectiveBase = basePriceCents - (basePriceCents * percentual / 100)
-```
+    ```
+    Base R$50 · Cupom R$25
+    Desconto = R$25,00
+    Atleta paga R$25,00 + taxas
+    ```
+  </Card>
+  <Card title="FREE — Cortesia total">
+    Inscrição 100% gratuita. Nenhum valor cobrado, nenhuma taxa.
 
-**Exemplo:** Inscrição de R$ 100,00 com cupom de 30%
-- `effectiveBase` = R$ 70,00
-- Taxas calculadas sobre R$ 70,00
-- Atleta paga R$ 70,00 + taxas (PIX: incluso; Cartão: acrescido via gross-up)
+    ```
+    Base R$50 · Cupom FREE
+    Total = R$0,00
+    Status da inscrição: COURTESY
+    ```
+  </Card>
+  <Card title="FREE_WITH_FEE — Cortesia com taxa">
+    Inscrição gratuita, mas o atleta paga somente as taxas (plataforma + gateway).
 
-### FIXED — Desconto em valor fixo
+    ```
+    Base R$50 · Cupom FREE_WITH_FEE
+    Mercadoria = R$0
+    Taxa serviço = R$4,70 · Taxa gateway = R$0,80
+    Atleta paga R$5,50
+    ```
+  </Card>
+</CardGroup>
 
-Desconta um valor fixo em reais do `basePriceCents`.
-
-```
-effectiveBase = basePriceCents - valorFixo
-```
-
-O resultado nunca fica negativo — se o valor fixo for maior que o preço base, `effectiveBase` é zerado (equivale a FREE).
-
-**Exemplo:** Inscrição de R$ 100,00 com cupom de R$ 25,00
-- `effectiveBase` = R$ 75,00
-
-### FREE — Cortesia total (100%)
-
-Zera completamente o valor. Não há cobrança — nem valor base, nem taxas.
-
-```
-effectiveBase = 0
-payerTotal = 0
-```
-
-A inscrição é confirmada imediatamente com status `COURTESY`. Não passa pelo fluxo de pagamento.
-
-### FREE_WITH_FEE — Gratuito com taxa
-
-Zera o valor base mas mantém a cobrança das taxas de processamento mínimas.
-
-```
-effectiveBase = 0
-payerTotal = taxaFixaGateway (se houver)
-```
-
-O atleta paga apenas o custo mínimo do gateway para processar a transação. O organizador recebe R$ 0,00 — o pagamento cobre apenas o custo operacional.
+<Warning>
+**FREE vs FREE_WITH_FEE:** `FREE` zera tudo — nenhum pagamento é gerado, a inscrição é confirmada imediatamente como COURTESY. `FREE_WITH_FEE` ainda cria um pagamento real cujo valor é a soma das taxas configuradas para o evento (`platformFee + gatewayFee`).
+</Warning>
 
 ---
 
-## Validação de cupom
+## Campos do cupom
 
-Quando o atleta aplica um cupom, o sistema verifica:
-
-1. **Código existe** — cupom com esse código existe no sistema
-2. **Pertence ao evento** — o cupom é válido para o evento em questão
-3. **Está ativo** — a flag `ativo` é verdadeira
-4. **Não expirou** — a data atual é anterior à `validade` do cupom
-5. **Tem cotas** — `usosRestantes > 0` (se limite de usos foi definido)
-6. **Categoria elegível** — a categoria selecionada está na lista de categorias elegíveis (ou a lista é vazia = todas as categorias)
-
-Se qualquer condição falhar, o sistema retorna erro e o cupom não é aplicado.
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `code` | String | Código único (case-insensitive na entrada) |
+| `discountType` | Enum | `PERCENT` · `FIXED` · `FREE` · `FREE_WITH_FEE` |
+| `discountPercent` | Decimal | Ex: `15.00` = 15% (usado no tipo PERCENT) |
+| `discountValue` | Decimal | Valor em centavos (usado no tipo FIXED) |
+| `maxUses` | Int? | Limite total de usos. Nulo = ilimitado |
+| `maxUsesPerUser` | Int? | Limite de usos por usuário |
+| `allowedCpfs` | String[] | CPFs autorizados. Vazio = qualquer atleta |
+| `expiresAt` | DateTime? | Data de expiração. Nulo = sem expiração |
+| `usedCount` | Int | Total de usos confirmados (incrementado no webhook de pagamento) |
 
 ---
 
-## Consumo de cotas
+## Validações aplicadas em `resolvePaymentCoupon()`
 
-O limite de usos é decrementado **no momento da confirmação do pagamento** (não no momento da aplicação do código). Isso evita que cotas sejam reservadas por inscrições que nunca são pagas.
+Antes de aplicar qualquer desconto, o backend valida todas as regras:
 
-Fluxo:
+| Verificação | Quando falha | Resultado |
+|-------------|-------------|-----------|
+| Cupom existe | Código não encontrado | Cupom inválido ou expirado |
+| Cupom ativo | `isActive = false` | Cupom inativo |
+| Pertence ao evento | `eventId` diferente | Cupom não válido para este evento |
+| Não expirou | `expiresAt < agora` | Cupom expirado |
+| Limite global | `usedCount ≥ maxUses` | Cupom esgotado |
+| Limite por usuário | Usuário já usou `maxUsesPerUser` vezes | Limite atingido para este usuário |
+| Restrição de CPF | `allowedCpfs` preenchido e CPF do atleta não está na lista | CPF não autorizado para este cupom |
+
+<Info>
+**Restrição por CPF:** o CPF verificado é o `registration.athleteCPF` — o CPF do atleta inscrito. Se um responsável estiver inscrevendo um dependente, é o CPF do dependente que é verificado, não o do responsável.
+</Info>
+
+---
+
+## Consumo de cotas (`usedCount`)
+
+O `usedCount` **só é incrementado quando o webhook confirma o pagamento** — não no momento de gerar o PIX nem de abrir o checkout. Assim, cupons não são "consumidos" por pagamentos abandonados.
+
 ```
-Atleta aplica cupom → armazenado na inscrição (ainda não consome cota)
-Atleta paga → cota consumida
-Inscrição expira sem pagar → cota NÃO consumida
+Atleta aplica cupom → armazenado na inscrição (usedCount não muda)
+Atleta paga → webhook chega → usedCount + 1
+Inscrição expira sem pagar → usedCount NÃO incrementa
 ```
 
 ---
 
-## Interação com lotes de preço
+## Como o desconto afeta o cálculo
 
-O desconto do cupom é aplicado sobre o preço do **lote vigente no momento da inscrição**. Se o lote mudar antes do pagamento, o preço com desconto já estava calculado e fixado na inscrição.
+O desconto reduz o `effectiveBase`, sobre o qual as taxas são recalculadas (quando `feeBase = POST_DISCOUNT`, que é o padrão):
+
+```
+effectiveBase = max(0, precoBase − desconto)
+```
+
+Para detalhes sobre `feeBase` e `platformFeeMode`, veja [Taxas e Cálculos](/sistema/taxas-calculos).
 
 ---
 
-## Um cupom por inscrição
+## Impacto financeiro por tipo
 
-Apenas um cupom pode ser aplicado por inscrição. Não há acúmulo de descontos.
-
----
-
-## Cupons e o organizador
-
-Cupons do tipo FREE (cortesia) não geram receita para o organizador — o custo da participação é absorvido. Já cupons FREE_WITH_FEE geram um mínimo de cobertura de custos operacionais.
-
-Do ponto de vista do organizador, o impacto financeiro é:
-
-| Tipo de cupom | Receita do organizador |
-|---------------|----------------------|
-| PERCENT / FIXED | `effectiveBase` após desconto, menos taxas |
-| FREE | R$ 0,00 |
-| FREE_WITH_FEE | R$ 0,00 (atleta paga só as taxas) |
+| Tipo de cupom | Atleta paga | Organizador recebe |
+|---------------|-------------|-------------------|
+| PERCENT / FIXED | `effectiveBase` + taxas (conforme modo) | `effectiveBase` − taxa plataforma (modo ABSORB) ou `effectiveBase` (modo PASS_TO_PAYER) |
+| FREE | R$0,00 | R$0,00 |
+| FREE_WITH_FEE | `platformFee + gatewayFee` | R$0,00 |

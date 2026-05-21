@@ -7,76 +7,90 @@ description: "Como funciona o fluxo completo de pagamento no Passo Giro, do PIX 
 
 ## Visão geral
 
-O Passo Giro suporta dois métodos de pagamento: **PIX** (via Woovi) e **cartão de crédito** (via Asaas). O roteamento é feito automaticamente com base no método escolhido pelo atleta e no gateway configurado para o organizador.
-
-## Método 1: PIX (Woovi)
-
-```
-Atleta escolhe PIX
-        ↓
-Sistema cria cobrança na Woovi
-        ↓
-QR Code exibido na tela (validade: 30 min)
-        ↓
-Atleta paga no app do banco
-        ↓
-Woovi envia webhook ao Passo Giro
-        ↓
-Sistema confirma inscrição → status: PAGO
-        ↓
-Atleta recebe e-mail de confirmação
-        ↓
-Valor disponível para saque imediatamente (liquidação IMEDIATA)
-```
-
-### Expiração do PIX
-
-Se o atleta não pagar dentro de 30 minutos, a cobrança expira na Woovi e a inscrição fica como **Expirada**. O atleta pode iniciar uma nova inscrição e pagar o preço do lote vigente naquele momento.
+O Passo Giro suporta dois métodos de pagamento: **PIX** (via Woovi) e **cartão de crédito** (via Asaas). O roteamento é feito automaticamente com base no método escolhido pelo atleta e no gateway configurado para o organizador via `PaymentMethodConfig`.
 
 ---
 
-## Método 2: Cartão de Crédito (Asaas)
+## Fluxo PIX (Woovi)
 
-```
-Atleta escolhe cartão
-        ↓
-Sistema cria sessão de checkout no Asaas
-        ↓
-Atleta é redirecionado para página de pagamento Asaas
-        ↓
-Atleta preenche dados do cartão e confirma
-        ↓
-Asaas processa o pagamento
-        ↓
-Asaas envia webhook ao Passo Giro
-        ↓
-Sistema confirma inscrição → status: PAGO
-        ↓
-Atleta retorna ao Passo Giro e vê confirmação
-        ↓
-Valor fica em HOLD (liquidação PENDENTE)
-        ↓
-Após período de hold → status: LIQUIDADO
-        ↓
-Valor disponível para saque
-```
+<Steps>
+  <Step title="Atleta abre a página de pagamento">
+    O frontend carrega os métodos disponíveis e verifica se já existe um PIX ativo para a inscrição. Se houver, **restaura o QR Code existente** sem criar nova cobrança.
+  </Step>
+  <Step title="Aplicar cupom (opcional)">
+    O frontend chama `previewPaymentBreakdown`. O backend calcula via FeeEngine e retorna o breakdown ao vivo — nenhum pagamento é criado ainda.
+  </Step>
+  <Step title="Clicar em 'Gerar QR Code PIX'">
+    O frontend chama `initiatePayment(method=PIX)`. O backend:
+    1. Valida o cupom (se houver)
+    2. Calcula o breakdown via FeeEngine
+    3. Chama `WooviAdapter` → cria cobrança na Woovi
+    4. Persiste o registro `Payment` com status `AWAITING_PAYMENT`
+    5. Retorna o QR Code e o código copia-cola
+  </Step>
+  <Step title="QR Code exibido (validade: 30 min)">
+    O frontend exibe o QR Code e fica ouvindo atualizações via WebSocket. O PIX expira em 30 minutos.
+  </Step>
+  <Step title="Webhook Woovi confirma">
+    O backend recebe `POST /payments/webhook/woovi`, chama `markPaymentAsPaid()`.
+    Saldo creditado em `totalNetReceived` **imediatamente** (liquidação instantânea).
+  </Step>
+  <Step title="Inscrição confirmada">
+    O frontend recebe notificação via WebSocket, exibe tela de sucesso e comprovante.
+  </Step>
+</Steps>
 
-### Parcelamento
+<Info>
+**Cupom FREE:** não gera cobrança na Woovi. O backend detecta `payerTotalCents = 0`, cria o registro `Payment` com status `COURTESY` e confirma a inscrição imediatamente — sem necessidade de webhook.
+</Info>
 
-Com cartão, o atleta pode parcelar conforme configuração do evento. O valor total cobrado no cartão é ligeiramente maior que o valor base, pois as taxas do gateway são repassadas ao comprador via **gross-up** (veja [Taxas e Cálculos](/sistema/taxas-calculos)).
+---
+
+## Fluxo Cartão de Crédito (Asaas)
+
+<Steps>
+  <Step title="Atleta escolhe 'Cartão de crédito'">
+    O frontend busca o breakdown para cada número de parcelas disponíveis via `previewPaymentBreakdown` e exibe os valores com a taxa do cartão já incluída (gross-up).
+  </Step>
+  <Step title="Preencher endereço e escolher parcelas">
+    O endereço completo do atleta é **obrigatório** pela Asaas e é salvo no perfil antes de prosseguir. O atleta escolhe 1× ou o número de parcelas desejado.
+  </Step>
+  <Step title="Clicar em 'Pagar com Cartão'">
+    O frontend chama `initiatePayment(method=CREDIT_CARD, installments=N)`. O backend:
+    1. Valida o cupom (se houver)
+    2. Calcula o breakdown via FeeEngine (com gross-up)
+    3. Chama `AsaasAdapter` → cria sessão de checkout no Asaas
+    4. Persiste `Payment` com status `AWAITING_PAYMENT`
+    5. Retorna a URL de checkout hospedada pela Asaas
+  </Step>
+  <Step title="Redireciona para checkout Asaas">
+    O frontend abre o link em nova aba. A tela interna fica em modo "aguardando pagamento" com polling de status.
+  </Step>
+  <Step title="Webhook Asaas confirma">
+    O backend recebe `POST /payments/webhook/asaas`, chama `markPaymentAsPaid()`.
+    O valor vai para `totalPendingClearance` (período de hold — padrão: ~32 dias).
+  </Step>
+  <Step title="Cron libera o saldo">
+    Uma tarefa diária verifica se `availableAt ≤ agora` e move o valor de `totalPendingClearance` para `totalNetReceived`, liberando-o para saque. Veja [Liquidação](/sistema/liquidacao).
+  </Step>
+</Steps>
+
+<Info>
+**Gross-up cartão:** o valor cobrado do atleta já inclui a taxa da Asaas embutida. O objetivo é garantir que, depois da Asaas deduzir (ex: 3,49% + R$0,49) mais a antecipação, a plataforma receba exatamente o `expectedNetCents` alvo. Veja [Taxas e Cálculos](/sistema/taxas-calculos).
+</Info>
 
 ---
 
 ## Roteamento de pagamentos
 
-O `PaymentRoutingService` resolve qual gateway usar para cada método:
+O `PaymentRoutingService` resolve qual adapter usar com base no `PaymentMethodConfig` do evento:
 
-| Método escolhido | Gateway |
-|-----------------|---------|
-| PIX | Woovi (configurado para o organizador) |
-| Cartão | Asaas (configurado para o organizador) |
+| Método | Gateway padrão |
+|--------|---------------|
+| PIX | Woovi |
+| Cartão | Asaas |
 
-Se o organizador não tiver um gateway configurado para o método, a opção não é exibida para o atleta.
+Se o organizador não tiver um gateway configurado para o método escolhido, a opção não é exibida para o atleta durante a inscrição.
 
 ---
 
@@ -85,34 +99,34 @@ Se o organizador não tiver um gateway configurado para o método, a opção nã
 O sistema tem proteção contra processamento duplicado. Ao receber um webhook:
 
 1. Verifica o status atual da inscrição
-2. Se já está `PAID` ou `COURTESY`, ignora o webhook
+2. Se já está `PAID` ou `COURTESY`, o evento é **ignorado com segurança**
 3. Se está `AWAITING_PAYMENT`, processa e confirma
 
-Isso garante que mesmo que o gateway envie o mesmo webhook mais de uma vez, a inscrição não será confirmada duas vezes.
+Isso garante que mesmo que o gateway envie o mesmo evento mais de uma vez, a inscrição não seja confirmada duas vezes.
 
 ---
 
-## Correlação de pagamentos
+## correlationId — rastreamento de pagamentos
 
 Cada pagamento tem um `correlationId` que identifica o que está sendo pago:
 
-| Tipo | Formato do correlationId |
-|------|--------------------------|
+| Tipo | Formato |
+|------|---------|
 | Inscrição nova | `{registrationId}` |
-| Troca de categoria | `{registrationId}-change-{changeId}` |
+| Diferença de troca de categoria | `{registrationId}-change-{changeId}` |
 
-O `correlationId` é usado nos webhooks para localizar e atualizar a inscrição correta.
+O `correlationId` é enviado ao gateway e retorna nos webhooks para localizar e atualizar o registro correto.
 
 ---
 
-## Status de inscrição vs status de pagamento
+## Status da inscrição × fluxo de pagamento
 
 | Ação | Status da inscrição |
 |------|---------------------|
-| Inscrição criada, pagamento não iniciado | `PENDING` |
+| Inscrição criada, sem cobrança gerada | `PENDING` |
 | Cobrança criada, aguardando pagamento | `AWAITING_PAYMENT` |
-| Pagamento confirmado | `PAID` |
-| Cupom 100% sem pagamento | `COURTESY` |
+| Pagamento confirmado via webhook | `PAID` |
+| Cupom FREE — confirmação direta, sem webhook | `COURTESY` |
 | Prazo expirou sem pagamento | `EXPIRED` |
 | Inscrição cancelada | `CANCELLED` |
 | Valor devolvido ao atleta | `REFUNDED` |

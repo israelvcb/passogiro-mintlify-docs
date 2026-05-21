@@ -7,16 +7,16 @@ description: "Como funciona o período de hold e a liquidação de pagamentos PI
 
 ## O que é liquidação
 
-Liquidação é o processo pelo qual o dinheiro de um pagamento se torna **disponível para saque** pelo organizador. Dependendo do método de pagamento, pode ser imediata ou ter um período de espera (hold).
+Liquidação é o processo pelo qual o dinheiro de um pagamento se torna **disponível para saque** pelo organizador. Dependendo do método de pagamento, pode ser imediata ou passar por um período de hold.
 
-## Status de liquidação
+## Status de liquidação (`clearanceStatus`)
 
 | Status | Descrição |
 |--------|-----------|
 | `NOT_APPLICABLE` | Sem pagamento (inscrições cortesia) |
 | `IMMEDIATE` | Liquidado imediatamente (PIX) |
 | `PENDING` | Em período de hold (cartão, aguardando liquidação) |
-| `CLEARED` | Hold encerrado, valor disponível (cartão após hold) |
+| `CLEARED` | Hold encerrado, valor disponível para saque (cartão após hold) |
 
 ---
 
@@ -25,48 +25,41 @@ Liquidação é o processo pelo qual o dinheiro de um pagamento se torna **dispo
 Pagamentos via PIX têm liquidação **instantânea**. Assim que o webhook de confirmação é recebido:
 
 - Status da inscrição: `PAID`
-- Status de liquidação: `IMMEDIATE`
-- O valor líquido é **imediatamente somado** ao saldo disponível do organizador
+- `clearanceStatus`: `IMMEDIATE`
+- O valor líquido é somado **imediatamente** ao `totalNetReceived` do evento
 - O organizador pode solicitar saque no mesmo instante
 
 ---
 
 ## Cartão — Período de Hold
 
-Pagamentos via cartão (Asaas) passam por um período de hold antes de ficarem disponíveis. Isso ocorre porque a operadora de cartão pode fazer estorno (chargeback) dentro de certo prazo.
+Pagamentos via cartão (Asaas) passam por um período de hold antes de ficarem disponíveis. Isso ocorre porque a operadora pode fazer estorno (chargeback) dentro de um prazo.
 
-### Com antecipação habilitada
-
-Quando o organizador tem a antecipação automática ativada no Asaas:
-
-- Hold: **~2 dias úteis**
-- O Asaas antecipa o recebimento cobrando uma taxa adicional de antecipação
-- Essa taxa é embutida no gross-up pago pelo atleta
-
-### Sem antecipação
-
-Quando a antecipação está desativada:
-
-- Hold: **~32 dias** (prazo padrão do cartão)
-- Sem taxa adicional de antecipação
-- O valor fica como `PENDING` por mais tempo
+O tempo de hold é configurado por evento no campo `settlementHoldDays` do `PaymentMethodConfig`. O **padrão** é **32 dias** (variável `ASAAS_DEFAULT_SETTLEMENT_HOLD_DAYS`).
 
 ### Fluxo do cartão com hold
 
 ```
-Pagamento confirmado
+Pagamento confirmado (webhook Asaas)
         ↓
 clearanceStatus = PENDING
 Valor somado a: totalPendingClearance
+availableAt = dataConfirmação + settlementHoldDays
         ↓
-Período de hold transcorre
+Cron job diário verifica: availableAt ≤ agora?
         ↓
-Webhook de liquidação recebido do Asaas
-        ↓
-clearanceStatus = CLEARED
-Valor movido de: totalPendingClearance → totalNetReceived
-Organizador pode sacar o valor
+Sim → clearanceStatus = CLEARED
+      Valor movido: totalPendingClearance → totalNetReceived
+      Organizador pode sacar
 ```
+
+### Cron job de liquidação
+
+Uma tarefa agendada roda diariamente e processa todos os pagamentos de cartão com `clearanceStatus = PENDING` cujo `availableAt` já passou. Para cada um:
+
+1. Atualiza `clearanceStatus` para `CLEARED`
+2. Decrementa `totalPendingClearance` pelo valor líquido
+3. Incrementa `totalNetReceived` pelo mesmo valor
 
 ---
 
@@ -77,15 +70,25 @@ Cada evento tem uma conta financeira com os seguintes campos:
 | Campo | Descrição |
 |-------|-----------|
 | `totalReceived` | Soma bruta de todos os pagamentos confirmados |
-| `totalPendingClearance` | Valor de cartão ainda em hold |
+| `totalPendingClearance` | Valor de cartão ainda em período de hold |
 | `totalNetReceived` | Valor já liquidado e disponível (PIX imediato + cartão após hold) |
 | `totalWithdrawn` | Total já sacado pelo organizador |
 
 ### Saldo disponível para saque
 
 ```
-saldo disponível = totalNetReceived - totalWithdrawn
+saldo disponível = totalNetReceived − totalWithdrawn
 ```
+
+---
+
+## Resumo por método de pagamento
+
+| Método | Hold | Liquidação | Campo inicial |
+|--------|------|-----------|---------------|
+| PIX (Woovi) | 0 dias | Imediata no webhook | `totalNetReceived` |
+| Cartão (Asaas) | `settlementHoldDays` (padrão: 32) | Cron diário após hold | `totalPendingClearance` → depois `totalNetReceived` |
+| Cortesia (FREE) | — | Não aplicável | Nenhum campo financeiro alterado |
 
 ---
 
@@ -93,7 +96,7 @@ saldo disponível = totalNetReceived - totalWithdrawn
 
 Quando uma inscrição é reembolsada:
 
-- O valor é estornado ao atleta pelo gateway
+- O gateway estorna o valor ao atleta
 - O `totalNetReceived` é reduzido pelo valor líquido da inscrição
 - Se o valor já foi sacado, o organizador fica com saldo negativo até compensar
 
