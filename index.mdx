@@ -1,133 +1,47 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Documentação Passo Giro"
+description: "Central de ajuda para atletas, organizadores e administradores da plataforma."
 ---
 
-## Setting up
+<img
+  className="block dark:hidden"
+  src="/images/hero.jpeg"
+  alt="Passo Giro — Eventos Esportivos"
+  style={{width: "100%", borderRadius: "12px", marginBottom: "8px"}}
+  noZoom
+/>
 
-Get your documentation site up and running in minutes.
+## Para quem é esta documentação?
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={3}>
+  <Card title="Atletas" icon="person-running" href="/atletas/introducao">
+    Como criar conta, encontrar eventos, se inscrever, pagar e fazer check-in.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Organizadores" icon="calendar-check" href="/organizadores/introducao">
+    Como criar eventos, gerenciar inscrições, configurar pagamentos e saques.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Administradores" icon="shield-halved" href="/admin/introducao">
+    Gestão de organizadores, gateways de pagamento, saques e monitoramento.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Regras do sistema
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Fluxo de Pagamento" icon="money-bill-transfer" href="/sistema/fluxo-pagamento">
+    Como funciona o PIX (Woovi), cartão (Asaas), webhooks e idempotência.
+  </Card>
+  <Card title="Taxas e Cálculos" icon="calculator" href="/sistema/taxas-calculos">
+    FeeEngine, platformFeeMode, gross-up para cartão e configuração por evento.
+  </Card>
+  <Card title="Cupons de Desconto" icon="tag" href="/sistema/cupons">
+    Tipos PERCENT, FIXED, FREE e FREE_WITH_FEE — regras e validações.
+  </Card>
+  <Card title="Ciclo da Inscrição" icon="rotate" href="/sistema/ciclo-inscricao">
+    Estados PENDING → PAID → EXPIRED e todas as transições possíveis.
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Precisa de ajuda?
 
-## Make your content agent ready
-
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Entre em contato com o suporte em [suporte@passogiro.com.br](mailto:suporte@passogiro.com.br).

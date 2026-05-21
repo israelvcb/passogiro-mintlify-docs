@@ -8,6 +8,9 @@
     "dark": "#EA580C"
   },
   "favicon": "/favicon.png",
+  "contextual": {
+    "options": []
+  },
   "navigation": {
     "tabs": [
       {
