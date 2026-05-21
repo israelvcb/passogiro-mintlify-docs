@@ -1,0 +1,91 @@
+---
+title: "Cupons de Desconto"
+description: "Como criar e gerenciar cupons de desconto para o seu evento."
+---
+
+# Cupons de Desconto
+
+## Tipos de cupom
+
+O Passo Giro suporta quatro tipos de cupom:
+
+<CardGroup cols={2}>
+  <Card title="Percentual" icon="percent">
+    Desconto em percentual sobre o valor base da inscrição.
+    Ex: 20% de desconto — inscrição de R$ 100 fica R$ 80.
+  </Card>
+  <Card title="Valor Fixo" icon="tag">
+    Desconto de um valor fixo em reais.
+    Ex: R$ 15 de desconto — inscrição de R$ 100 fica R$ 85.
+  </Card>
+  <Card title="Cortesia (100%)" icon="gift">
+    Inscrição completamente gratuita. O atleta não paga nada, nem taxas.
+    Status final da inscrição: **Cortesia**.
+  </Card>
+  <Card title="Gratuito + Taxa" icon="shield-check">
+    Isenta o valor base, mas o atleta paga apenas as taxas de processamento.
+    Útil para inscrições cortesia onde o custo da plataforma é cobrado.
+  </Card>
+</CardGroup>
+
+## Criando um cupom
+
+1. No painel do evento, acesse **Cupons**
+2. Clique em **Novo Cupom**
+3. Preencha:
+
+| Campo | Descrição |
+|-------|-----------|
+| Código | Código que o atleta digitará. Ex: `AMIGO20` |
+| Tipo | Percentual, Fixo, Cortesia ou Gratuito+Taxa |
+| Valor | Percentual (ex: 20) ou valor fixo (ex: 15.00) |
+| Limite de usos | Quantas vezes o cupom pode ser usado (deixe em branco para ilimitado) |
+| Válido até | Data de expiração do cupom |
+| Categorias elegíveis | Se vazio, vale para todas. Selecione para restringir |
+| Ativo | Se o cupom está habilitado |
+
+4. Clique em **Salvar**
+
+## Regras de aplicação
+
+- Um cupom só pode ser aplicado **uma vez por inscrição**
+- O código é **case-insensitive** — `amigo20` funciona igual a `AMIGO20`
+- Se o cupom tiver limite de usos, ao esgotar as cotas ele é automaticamente desativado
+- Cupons não se acumulam — apenas um por inscrição
+
+## Cupom percentual — como o desconto é calculado
+
+O desconto percentual incide sobre o **valor base da inscrição** (preço do lote antes das taxas).
+
+```
+Valor base: R$ 100,00
+Cupom: 20% de desconto
+Desconto: R$ 20,00
+Valor com desconto: R$ 80,00
+Taxas calculadas sobre: R$ 80,00
+```
+
+## Cortesia — sem nenhum custo
+
+Com cupom de cortesia (100% de desconto), o atleta não paga nada. A inscrição é confirmada imediatamente como **Cortesia** sem passar pelo fluxo de pagamento.
+
+## Gratuito + Taxa — apenas as taxas
+
+Com esse tipo, o valor base é zerado mas as taxas de processamento da plataforma são cobradas:
+
+```
+Valor base: R$ 100,00
+Desconto: R$ 100,00 (100% isenção base)
+Taxa plataforma calculada sobre: R$ 0,00 (base zero)
+Atleta paga: somente a taxa de processamento
+```
+
+<Info>
+As taxas exatas dependem da configuração do gateway. Veja [Taxas e Cálculos](/sistema/taxas-calculos) para detalhes.
+</Info>
+
+## Monitorando o uso dos cupons
+
+Na listagem de cupons, você vê quantas vezes cada código foi utilizado e quantas cotas restam.
+
+Para ver quais inscrições usaram um cupom específico, filtre o [Painel de Inscrições](/organizadores/painel-inscricoes) pelo código do cupom.

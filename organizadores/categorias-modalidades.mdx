@@ -1,0 +1,77 @@
+---
+title: "Categorias e Modalidades"
+description: "Como configurar as categorias de participação no seu evento."
+---
+
+# Categorias e Modalidades
+
+## O que são categorias
+
+Categorias definem as **divisões de competição** dentro do seu evento. Cada atleta se inscreve em uma categoria que define:
+
+- A **distância** que irá percorrer
+- A **faixa etária** permitida
+- O **gênero** da divisão
+- O **preço** da inscrição (via lotes)
+
+## Criando uma categoria
+
+1. No painel do evento, acesse **Categorias**
+2. Clique em **Nova Categoria**
+3. Preencha os campos:
+
+| Campo | Descrição |
+|-------|-----------|
+| Nome | Ex: "5km Masculino", "10km Geral Feminino" |
+| Distância | Distância em km |
+| Gênero | Masculino, Feminino ou Misto |
+| Idade mínima | Idade mínima na data do evento (deixe em branco para sem limite) |
+| Idade máxima | Idade máxima na data do evento (deixe em branco para sem limite) |
+| Limite de vagas | Número máximo de inscrições nessa categoria (opcional) |
+| Descrição | Informações adicionais da categoria |
+
+4. Clique em **Salvar**
+
+## Faixas etárias
+
+A validação de faixa etária é feita com base na **data do evento** e na **data de nascimento** cadastrada no perfil do atleta. O sistema impede automaticamente inscrições fora da faixa configurada.
+
+**Exemplo:**
+- Evento em 15/06/2025
+- Categoria: 40 a 49 anos
+- Atleta nascido em 20/01/1985 → tem 40 anos na data do evento → **permitido**
+- Atleta nascido em 10/12/1975 → tem 49 anos na data do evento → **permitido**
+- Atleta nascido em 01/07/1985 → tem 39 anos na data do evento → **bloqueado**
+
+## Múltiplas categorias
+
+Você pode criar quantas categorias precisar. Recomendamos organizar da forma mais clara possível para facilitar a escolha dos atletas.
+
+**Exemplo de estrutura:**
+
+```
+5km
+├── 5km Masculino Geral
+└── 5km Feminino Geral
+
+10km
+├── 10km Masculino (18-29 anos)
+├── 10km Masculino (30-39 anos)
+├── 10km Masculino (40-49 anos)
+├── 10km Masculino (50+ anos)
+├── 10km Feminino (18-29 anos)
+└── 10km Feminino (30+ anos)
+```
+
+## Editando e removendo categorias
+
+- **Editar**: Clique no ícone de edição ao lado da categoria
+- **Remover**: Só é possível remover categorias que **não possuem inscrições**. Categorias com inscrições devem ser desativadas.
+
+## Desativar categoria
+
+Para fechar as inscrições em uma categoria específica sem remover:
+
+1. Edite a categoria
+2. Desmarque **Ativa** ou defina um limite de vagas igual ao número atual de inscrições
+3. Salve

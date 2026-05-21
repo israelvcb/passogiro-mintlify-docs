@@ -1,0 +1,62 @@
+---
+title: "Lotes de Preço"
+description: "Como configurar lotes de preço com aumentos progressivos por data."
+---
+
+# Lotes de Preço
+
+## O que são lotes
+
+Lotes são **períodos de preço** para as inscrições. É comum em eventos esportivos ter preços menores para quem se inscreve antecipadamente, com aumentos à medida que o evento se aproxima.
+
+**Exemplo:**
+- **1º Lote** — R$ 50,00 (até 31/03/2025)
+- **2º Lote** — R$ 70,00 (01/04/2025 a 30/04/2025)
+- **3º Lote** — R$ 90,00 (01/05/2025 a 10/06/2025)
+
+## Criando um lote
+
+1. No painel do evento, acesse **Lotes de Preço**
+2. Clique em **Novo Lote**
+3. Preencha:
+
+| Campo | Descrição |
+|-------|-----------|
+| Nome | Ex: "1º Lote", "Lote Antecipado" |
+| Data de início | Quando esse lote começa a vigorar |
+| Data de fim | Quando esse lote encerra |
+| Ativo | Se o lote está ativo |
+
+4. Adicione os **preços por categoria** — cada categoria pode ter um preço diferente por lote
+5. Clique em **Salvar**
+
+## Preços por categoria
+
+Para cada lote, defina o preço de cada categoria:
+
+| Categoria | 1º Lote | 2º Lote | 3º Lote |
+|-----------|---------|---------|---------|
+| 5km Masculino | R$ 40,00 | R$ 55,00 | R$ 70,00 |
+| 5km Feminino | R$ 40,00 | R$ 55,00 | R$ 70,00 |
+| 10km Masculino | R$ 60,00 | R$ 80,00 | R$ 100,00 |
+| 10km Feminino | R$ 60,00 | R$ 80,00 | R$ 100,00 |
+
+## Transição automática de lotes
+
+O sistema altera o preço **automaticamente** quando um lote expira e o próximo começa. Não é necessário intervenção manual.
+
+<Info>
+A transição acontece à meia-noite do horário de Brasília no dia de início do novo lote.
+</Info>
+
+## Lote vigente
+
+O atleta sempre paga o preço do **lote ativo no momento da inscrição**. O preço fica travado após a criação da inscrição, mesmo que o lote mude antes do pagamento ser confirmado.
+
+<Warning>
+Se o atleta não pagar dentro do prazo e a inscrição expirar, ao se inscrever novamente pagará o preço do lote vigente na nova data de inscrição.
+</Warning>
+
+## Verificando o lote atual
+
+No painel do evento, a seção **Lotes** mostra qual lote está ativo agora e quando expira.

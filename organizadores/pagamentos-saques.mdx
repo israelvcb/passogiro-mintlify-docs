@@ -1,0 +1,85 @@
+---
+title: "Pagamentos e Saques"
+description: "Como acompanhar os recebimentos e solicitar saques para sua conta bancária."
+---
+
+# Pagamentos e Saques
+
+## Visão financeira do evento
+
+No painel do evento, a aba **Financeiro** mostra o resumo financeiro completo:
+
+<img src="/images/organizador/aba_financeiro.png" alt="Aba financeira do evento" />
+
+| Indicador | Descrição |
+|-----------|-----------|
+| **Total Recebido** | Soma de todos os pagamentos confirmados (valor bruto) |
+| **Pendente de Liquidação** | Valor de cartão ainda em período de hold |
+| **Disponível Líquido** | Valor já liquidado menos taxas, disponível para saque |
+| **Total Sacado** | Soma de todos os saques realizados |
+
+## Entendendo as taxas
+
+Para cada inscrição paga, o Passo Giro retém:
+
+- **Taxa de plataforma** — percentual sobre o valor base da inscrição
+- **Taxa de gateway** — custo do processamento PIX ou cartão
+
+O **valor líquido** é o que fica disponível para você após essas deduções.
+
+Veja o detalhamento completo em [Taxas e Cálculos](/sistema/taxas-calculos).
+
+## Liquidação de pagamentos
+
+- **PIX**: liquidação **imediata** — valor disponível para saque no mesmo instante
+- **Cartão de crédito**: período de **hold** antes de ficar disponível
+  - Com antecipação: ~2 dias úteis
+  - Sem antecipação: ~32 dias
+
+Veja mais em [Liquidação](/sistema/liquidacao).
+
+## Solicitando um saque
+
+1. No painel do evento, acesse **Financeiro**
+2. Clique em **Solicitar Saque**
+3. Informe o valor desejado (até o saldo disponível líquido)
+4. Confirme os dados bancários cadastrados
+5. Clique em **Confirmar solicitação**
+
+O saque é processado pelo time do Passo Giro e o valor é transferido para sua conta em até **5 dias úteis**.
+
+<Info>
+Saques são sujeitos à aprovação do administrador da plataforma. Você será notificado por e-mail quando o saque for processado.
+</Info>
+
+## Dados bancários
+
+Para receber saques, você precisa ter uma conta bancária cadastrada:
+
+1. Acesse **Minha Conta** → **Dados Bancários**
+2. Informe:
+   - Banco
+   - Agência
+   - Conta (corrente ou poupança)
+   - Tipo de chave PIX (opcional para saques mais rápidos)
+3. Salve
+
+## Histórico de saques
+
+Na aba **Financeiro**, o histórico mostra todos os saques realizados com:
+- Data da solicitação
+- Valor solicitado
+- Status (pendente, aprovado, pago, recusado)
+- Data do pagamento
+
+## Auditoria de transações
+
+Para uma visão detalhada de cada transação individual:
+
+<img src="/images/organizador/aba_auditoria.png" alt="Aba de auditoria de transações" />
+
+Na aba **Auditoria**, cada pagamento mostra:
+- Atleta e inscrição
+- Valor bruto, taxa e valor líquido
+- Gateway utilizado
+- Status de liquidação
