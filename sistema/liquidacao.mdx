@@ -90,6 +90,27 @@ saldo disponível = totalNetReceived − totalWithdrawn
 
 ---
 
+## Cartão parcelado — liquidação por parcela
+
+Em um parcelamento, cada parcela é um pagamento separado confirmado mensalmente pelo banco. A liquidação segue o mesmo hold (`settlementHoldDays`) para **cada parcela individualmente** — não espera todas as parcelas para liberar.
+
+```
+Parcela 1 confirmada → totalPendingClearance += líquido₁  |  availableAt = hoje + holdDays
+Parcela 2 confirmada → totalPendingClearance += líquido₂  |  availableAt = hoje + holdDays
+…
+Cron diário:
+  parcela 1 vence → CLEARED → totalNetReceived += líquido₁
+  parcela 2 vence → CLEARED → totalNetReceived += líquido₂
+```
+
+O organizador pode sacar o valor das parcelas já liquidadas sem esperar as restantes.
+
+<Info>
+Use `paidInstallments` e `totalInstallments` da tabela `Payment` para saber quantas parcelas já entraram no caixa. O `installmentGroupId` permite agrupar todas as confirmações de um mesmo parcelamento para cálculo do total recebido parcial.
+</Info>
+
+---
+
 ## Reembolsos e impacto na liquidação
 
 Quando uma inscrição é reembolsada:

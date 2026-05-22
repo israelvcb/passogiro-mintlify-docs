@@ -256,6 +256,64 @@ flowchart LR
 
 ---
 
+## Rastreamento de parcelas confirmadas
+
+Para pagamentos parcelados via cartão (Asaas), o sistema registra individualmente cada parcela confirmada pelo banco, permitindo auditoria e controle de repasse ao organizador.
+
+### Campos na tabela `Payment`
+
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `totalInstallments` | `Int?` | Número de parcelas escolhidas pelo atleta |
+| `paidInstallments` | `Int` | Quantas parcelas o banco já confirmou (começa em `0`) |
+| `installmentGroupId` | `String?` | ID do grupo de parcelamento no gateway (Asaas: `payment.installment`). Todas as N confirmações de um mesmo parcelamento compartilham este ID |
+
+### Fluxo de confirmações
+
+```mermaid
+sequenceDiagram
+  participant Asaas
+  participant BE as Backend
+  participant DB as Banco
+
+  Note over Asaas,DB: Parcela 1 (ou pagamento único)
+  Asaas->>BE: webhook CHECKOUT_PAID / PAYMENT_CONFIRMED (installmentNumber=1)
+  BE->>DB: Payment.internalStatus = PAID<br/>paidInstallments += 1<br/>installmentGroupId = "asaas-group-id"
+  DB-->>BE: ✅
+
+  Note over Asaas,DB: Parcelas 2, 3 … N (meses seguintes)
+  Asaas->>BE: webhook PAYMENT_CONFIRMED (installmentNumber=2)
+  BE->>DB: paidInstallments += 1<br/>totalPendingClearance += líquido
+  DB-->>BE: ✅
+```
+
+### Idempotência por parcela
+
+| Situação | Comportamento |
+|----------|--------------|
+| Webhook duplicado da **parcela 1** | Ignorado — `internalStatus = PAID` bloqueia antes de qualquer atualização |
+| Webhook duplicado de **parcela 2+** | Não há guarda por parcela; reenvia duplicaria `paidInstallments`. Na prática a Asaas não reenvia duplicatas de confirmações já processadas |
+| Parcelas **fora de ordem** | Improvável com Asaas (débito mensal sequencial), mas seguro — ambas usam `increment`, não SET absoluto |
+
+<Info>
+O `installmentGroupId` permite consultar todas as confirmações de um parcelamento com um único filtro: `WHERE installmentGroupId = 'asaas-group-id'`. Útil para auditoria e para calcular quanto já foi recebido de um parcelamento específico.
+</Info>
+
+### Exemplo de auditoria
+
+```
+Parcelamento 5× — R$58,04 total (R$11,61/parcela)
+
+paidInstallments = 3   → banco confirmou 3 de 5 parcelas
+totalInstallments = 5
+installmentGroupId = "abc123"
+
+Líquido recebido até agora ≈ 3 × R$X (conforme actualNetCents de cada webhook)
+Ainda a receber: 2 parcelas
+```
+
+---
+
 ## Status da inscrição × fluxo de pagamento
 
 | Status | <Badge color="gray" size="xs">Quando ocorre</Badge> |
