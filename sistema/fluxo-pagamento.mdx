@@ -276,14 +276,14 @@ sequenceDiagram
   participant BE as Backend
   participant DB as Banco
 
-  Note over Asaas,DB: Parcela 1 (ou pagamento único)
+  Note over Asaas,DB: Parcela 1 (ou pagamento único) — crédito do líquido total
   Asaas->>BE: webhook CHECKOUT_PAID / PAYMENT_CONFIRMED (installmentNumber=1)
-  BE->>DB: Payment.internalStatus = PAID<br/>paidInstallments += 1<br/>installmentGroupId = "asaas-group-id"
+  BE->>DB: internalStatus = PAID<br/>paidInstallments += 1<br/>installmentGroupId = "asaas-group-id"<br/>totalPendingClearance += líquido total esperado<br/>availableAt = hoje + holdDays
   DB-->>BE: ✅
 
-  Note over Asaas,DB: Parcelas 2, 3 … N (meses seguintes)
+  Note over Asaas,DB: Parcelas 2, 3 … N — auditoria apenas (sem crédito adicional)
   Asaas->>BE: webhook PAYMENT_CONFIRMED (installmentNumber=2)
-  BE->>DB: paidInstallments += 1<br/>totalPendingClearance += líquido
+  BE->>DB: paidInstallments += 1<br/>actualNetCents += líquido desta parcela
   DB-->>BE: ✅
 ```
 
@@ -291,9 +291,9 @@ sequenceDiagram
 
 | Situação | Comportamento |
 |----------|--------------|
-| Webhook duplicado da **parcela 1** | Ignorado — `internalStatus = PAID` bloqueia antes de qualquer atualização |
-| Webhook duplicado de **parcela 2+** | Não há guarda por parcela; reenvia duplicaria `paidInstallments`. Na prática a Asaas não reenvia duplicatas de confirmações já processadas |
-| Parcelas **fora de ordem** | Improvável com Asaas (débito mensal sequencial), mas seguro — ambas usam `increment`, não SET absoluto |
+| Webhook duplicado da **parcela 1** | Ignorado — `internalStatus = PAID` bloqueia reprocessamento antes de qualquer alteração em `totalPendingClearance` |
+| Webhook duplicado de **parcela 2+** | Não há guarda por parcela; um duplicata incrementaria `paidInstallments` e `actualNetCents` erroneamente. Na prática a Asaas não reenvia duplicatas de confirmações já processadas. **`totalPendingClearance` não é afetado** (parcelas 2+ são somente auditoria) |
+| Parcelas **fora de ordem** | Improvável com Asaas (débito mensal sequencial), mas seguro — todos os campos usam `{ increment }`, não SET absoluto |
 
 <Info>
 O `installmentGroupId` permite consultar todas as confirmações de um parcelamento com um único filtro: `WHERE installmentGroupId = 'asaas-group-id'`. Útil para auditoria e para calcular quanto já foi recebido de um parcelamento específico.
@@ -302,15 +302,25 @@ O `installmentGroupId` permite consultar todas as confirmações de um parcelame
 ### Exemplo de auditoria
 
 ```
-Parcelamento 5× — R$58,04 total (R$11,61/parcela)
+Parcelamento 5× — R$58,04 total cobrado do atleta
 
-paidInstallments = 3   → banco confirmou 3 de 5 parcelas
+paidInstallments  = 3       → banco confirmou 3 de 5 parcelas
 totalInstallments = 5
 installmentGroupId = "abc123"
 
-Líquido recebido até agora ≈ 3 × R$X (conforme actualNetCents de cada webhook)
-Ainda a receber: 2 parcelas
+totalPendingClearance → creditado integralmente na parcela 1
+  (líquido total = amount − moneyRate − gatewayFeeAmount)
+
+actualNetCents → acumulado parcela a parcela:
+  parcela 1: +R$X  |  parcela 2: +R$X  |  parcela 3: +R$X
+  (para conciliação com o esperado após hold)
+
+Parcelas ainda pendentes de confirmação bancária: 2 (4 e 5)
 ```
+
+<Info>
+O organizador vê o valor total em **"Aguardando liquidação"** desde a confirmação da parcela 1. O campo `paidInstallments` é informativo — não muda o saldo.
+</Info>
 
 ---
 

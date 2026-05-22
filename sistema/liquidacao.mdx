@@ -65,18 +65,33 @@ Uma tarefa agendada roda diariamente e processa todos os pagamentos de cartão c
 
 Cada evento tem uma conta financeira com os seguintes campos:
 
-| Campo | Descrição |
-|-------|-----------|
-| `totalReceived` | Soma bruta de todos os pagamentos confirmados |
-| `totalPendingClearance` | Valor de cartão ainda em período de hold |
-| `totalNetReceived` | Valor já liquidado e disponível (PIX imediato + cartão após hold) |
-| `totalWithdrawn` | Total já sacado pelo organizador |
+| Campo | Descrição | Visível para |
+|-------|-----------|-------------|
+| `totalReceived` | Soma bruta de todos os pagamentos confirmados | Organizador e Admin |
+| `totalPendingClearance` | Valor de cartão ainda em período de hold | Organizador ("Aguardando liquidação") e Admin ("Cartão em hold") |
+| `totalNetReceived` | Valor já liquidado e disponível (PIX imediato + cartão após hold) | Organizador e Admin |
+| `totalWithdrawn` | Total já sacado pelo organizador | Organizador e Admin |
+| `totalNetAvailable` | Saldo disponível para novo saque (`totalNetReceived − totalWithdrawn`) | Organizador e Admin |
 
 ### Saldo disponível para saque
 
 ```
 saldo disponível = totalNetReceived − totalWithdrawn
 ```
+
+### Cálculo do líquido creditado
+
+Ao mover um pagamento de cartão de `totalPendingClearance` para `totalNetReceived`, o cron desconta:
+
+```
+líquido creditado = amount − moneyRate − gatewayFeeAmount
+```
+
+- `amount` — valor total cobrado do atleta
+- `moneyRate` — snapshot da taxa operacional da plataforma (custo por inscrição)
+- `gatewayFeeAmount` — taxa cobrada pelo gateway Asaas, já calculada pelo FeeEngine no momento da inscrição
+
+O mesmo cálculo é usado em `buildWithdrawalPaymentAllocations` ao validar o saldo disponível para saque.
 
 ---
 
@@ -90,23 +105,38 @@ saldo disponível = totalNetReceived − totalWithdrawn
 
 ---
 
-## Cartão parcelado — liquidação por parcela
+## Cartão parcelado — liquidação em bloco (não por parcela)
 
-Em um parcelamento, cada parcela é um pagamento separado confirmado mensalmente pelo banco. A liquidação segue o mesmo hold (`settlementHoldDays`) para **cada parcela individualmente** — não espera todas as parcelas para liberar.
+No parcelamento, o banco confirma mensalmente cada parcela ao longo de N meses. Porém, do ponto de vista da liquidação, o sistema credita o valor **uma única vez** — na confirmação da primeira parcela — e rastreia as confirmações seguintes apenas para auditoria.
+
+### Por que em bloco?
+
+O campo `amount` do registro `Payment` representa o **valor total do parcelamento** (ex.: 5× R$100 = R$500). Quando a Asaas confirma a parcela 1, o backend credita o líquido total esperado em `totalPendingClearance` e define `availableAt`. As parcelas 2–N apenas incrementam `paidInstallments` e acumulam `actualNetCents` para conciliação — sem alterar `totalPendingClearance` novamente.
 
 ```
-Parcela 1 confirmada → totalPendingClearance += líquido₁  |  availableAt = hoje + holdDays
-Parcela 2 confirmada → totalPendingClearance += líquido₂  |  availableAt = hoje + holdDays
-…
-Cron diário:
-  parcela 1 vence → CLEARED → totalNetReceived += líquido₁
-  parcela 2 vence → CLEARED → totalNetReceived += líquido₂
+Parcela 1 confirmada  → totalPendingClearance += líquido total esperado (net)
+                         availableAt = dataConfirmação + settlementHoldDays
+                         clearanceStatus = PENDING
+
+Parcelas 2, 3 … N    → paidInstallments += 1            (auditoria)
+                         actualNetCents  += líquido desta parcela  (conciliação)
+                         (totalPendingClearance: sem alteração)
+
+Cron diário (quando availableAt ≤ agora):
+  clearanceStatus = CLEARED
+  totalPendingClearance -= líquido total
+  totalNetReceived      += líquido total
+  → Organizador pode sacar
 ```
 
-O organizador pode sacar o valor das parcelas já liquidadas sem esperar as restantes.
+O hold de 32 dias cobre toda a janela de parcelamento típico, garantindo que eventuais chargebacks sejam absorvidos antes de o valor ficar disponível para saque.
+
+<Warning>
+**O organizador não saca por parcela.** O saque ocorre quando o período de hold encerrar (após `availableAt`), liberando o valor total de uma só vez. `paidInstallments` e `actualNetCents` são campos de auditoria — não alteram o saldo disponível individualmente.
+</Warning>
 
 <Info>
-Use `paidInstallments` e `totalInstallments` da tabela `Payment` para saber quantas parcelas já entraram no caixa. O `installmentGroupId` permite agrupar todas as confirmações de um mesmo parcelamento para cálculo do total recebido parcial.
+Use `paidInstallments` / `totalInstallments` para saber quantas parcelas o banco já confirmou. O `installmentGroupId` (ID do grupo Asaas) permite filtrar todas as confirmações de um mesmo parcelamento para auditoria detalhada.
 </Info>
 
 ---
