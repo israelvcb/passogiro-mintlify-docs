@@ -9,7 +9,7 @@ O sistema suporta quatro tipos, definidos pelo campo `discountType` do modelo `E
 
 <CardGroup cols={2}>
   <Card title="PERCENT — Desconto percentual">
-    Desconta uma porcentagem do preço base.
+    Desconta uma porcentagem do preço da categoria.
 
     ```
     Base R$50 · Cupom 15%
@@ -18,7 +18,7 @@ O sistema suporta quatro tipos, definidos pelo campo `discountType` do modelo `E
     ```
   </Card>
   <Card title="FIXED — Desconto valor fixo">
-    Desconta um valor fixo em reais do preço base.
+    Desconta um valor fixo em reais do preço da categoria.
 
     ```
     Base R$50 · Cupom R$25
@@ -26,7 +26,7 @@ O sistema suporta quatro tipos, definidos pelo campo `discountType` do modelo `E
     Atleta paga R$25,00 + taxas
     ```
   </Card>
-  <Card title="FREE — Cortesia total">
+  <Card title="FREE — Cortesia total (somente ADMIN)">
     Inscrição 100% gratuita. Nenhum valor cobrado, nenhuma taxa.
 
     ```
@@ -51,19 +51,23 @@ O sistema suporta quatro tipos, definidos pelo campo `discountType` do modelo `E
 **FREE vs FREE_WITH_FEE:** `FREE` zera tudo — nenhum pagamento é gerado, a inscrição é confirmada imediatamente como COURTESY. `FREE_WITH_FEE` ainda cria um pagamento real cujo valor é a soma das taxas configuradas para o evento (`platformFee + gatewayFee`).
 </Warning>
 
+<Warning>
+**FREE é restrito a administradores.** Organizadores só podem criar cupons dos tipos `PERCENT`, `FIXED` e `FREE_WITH_FEE`. Tentar criar ou atualizar um cupom para o tipo `FREE` sem permissão de admin retorna erro 403.
+</Warning>
+
 ---
 
 ## Campos do cupom
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `code` | String | Código único (case-insensitive na entrada) |
+| `code` | String | Código único (case-insensitive na entrada; normalizado para maiúsculas no banco) |
 | `discountType` | Enum | `PERCENT` · `FIXED` · `FREE` · `FREE_WITH_FEE` |
 | `discountPercent` | Decimal | Ex: `15.00` = 15% (usado no tipo PERCENT) |
 | `discountValue` | Decimal | Valor em centavos (usado no tipo FIXED) |
 | `maxUses` | Int? | Limite total de usos. Nulo = ilimitado |
 | `maxUsesPerUser` | Int? | Limite de usos por usuário |
-| `allowedCpfs` | String[] | CPFs autorizados. Vazio = qualquer atleta |
+| `allowedCpfs` | String[] | CPFs autorizados. Vazio = qualquer atleta. Aceita CPF com ou sem formatação (`123.456.789-00` e `12345678900` são equivalentes) |
 | `expiresAt` | DateTime? | Data de expiração. Nulo = sem expiração |
 | `usedCount` | Int | Total de usos confirmados (incrementado no webhook de pagamento) |
 
@@ -85,7 +89,13 @@ Antes de aplicar qualquer desconto, o backend valida todas as regras:
 
 <Info>
 **Restrição por CPF:** o CPF verificado é o `registration.athleteCPF` — o CPF do atleta inscrito. Se um responsável estiver inscrevendo um dependente, é o CPF do dependente que é verificado, não o do responsável.
+
+A comparação é feita após normalização: ambos os lados (CPF do atleta e lista `allowedCpfs`) têm pontuação removida antes da verificação. O organizador pode cadastrar `123.456.789-00` ou `12345678900` — ambos funcionam.
 </Info>
+
+<Warning>
+Falhas de validação (CPF não autorizado, cota esgotada, cupom expirado) são propagadas como erros GraphQL no `previewPaymentBreakdown`. O frontend deve verificar o campo `error` da resposta antes de aplicar o cupom — não apenas checar se os dados retornaram.
+</Warning>
 
 ---
 
@@ -103,7 +113,7 @@ Inscrição expira sem pagar → usedCount NÃO incrementa
 
 ## Como o desconto afeta o cálculo
 
-O desconto reduz o `effectiveBase`, sobre o qual as taxas são recalculadas (quando `feeBase = POST_DISCOUNT`, que é o padrão):
+O desconto reduz o `effectiveBase` (preço da categoria), sobre o qual as taxas são recalculadas (quando `feeBase = POST_DISCOUNT`, que é o padrão):
 
 ```
 effectiveBase = max(0, precoBase − desconto)
@@ -111,12 +121,39 @@ effectiveBase = max(0, precoBase − desconto)
 
 Para detalhes sobre `feeBase` e `platformFeeMode`, veja [Taxas e Cálculos](/sistema/taxas-calculos).
 
+### PERCENT 100% e FIXED maior ou igual ao preço da categoria
+
+Quando um cupom PERCENT de 100% é aplicado, ou quando o valor FIXED é igual ou maior que o preço da categoria, o `effectiveBase` chega a zero — mas **as taxas ainda são cobradas** (`chargeFeesAnyway = true`). O desconto zerará apenas o preço da categoria; o atleta pagará somente as taxas.
+
+```
+Base R$10 · Cupom FIXED R$50
+Desconto aplicado = R$10 (capped ao preço da categoria)
+effectiveBase = R$0,00
+Taxas ainda cobradas = sim
+Atleta paga = somente taxas (plataforma + gateway)
+```
+
+```
+Base R$50 · Cupom PERCENT 100%
+Desconto = R$50 (100% do preço)
+effectiveBase = R$0,00
+Taxas ainda cobradas = sim
+Atleta paga = somente taxas
+```
+
+<Info>
+Este comportamento é equivalente ao tipo `FREE_WITH_FEE`, mas produzido por PERCENT/FIXED. A diferença é semântica: `FREE_WITH_FEE` é uma decisão explícita do organizador; PERCENT 100% / FIXED ≥ preço é o efeito natural da aplicação do desconto máximo.
+
+O tipo `FREE` (cortesia total, sem nenhuma taxa) é exclusivo de administradores e deve ser criado explicitamente.
+</Info>
+
 ---
 
 ## Impacto financeiro por tipo
 
 | Tipo de cupom | Atleta paga | Organizador recebe |
 |---------------|-------------|-------------------|
-| PERCENT / FIXED | `effectiveBase` + taxas (conforme modo) | `effectiveBase` − taxa plataforma (modo ABSORB) ou `effectiveBase` (modo PASS_TO_PAYER) |
-| FREE | R$0,00 | R$0,00 |
+| PERCENT / FIXED (desconto parcial) | `effectiveBase` + taxas (conforme modo) | `effectiveBase` − taxa plataforma (modo ABSORB) ou `effectiveBase` (modo PASS_TO_PAYER) |
+| PERCENT 100% ou FIXED ≥ preço | Somente taxas (`chargeFeesAnyway = true`) | R$0,00 |
+| FREE | R$0,00 (somente ADMIN pode criar) | R$0,00 |
 | FREE_WITH_FEE | `platformFee + gatewayFee` | R$0,00 |

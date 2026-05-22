@@ -5,7 +5,7 @@ description: "Como criar e gerenciar cupons de desconto para o seu evento."
 
 ## Tipos de cupom
 
-O Passo Giro suporta quatro tipos de cupom:
+O Passo Giro suporta três tipos de cupom disponíveis para organizadores:
 
 <CardGroup cols={2}>
   <Card title="Percentual" icon="percent">
@@ -16,15 +16,15 @@ O Passo Giro suporta quatro tipos de cupom:
     Desconto de um valor fixo em reais.
     Ex: R$ 15 de desconto — inscrição de R$ 100 fica R$ 85.
   </Card>
-  <Card title="Cortesia (100%)" icon="gift">
-    Inscrição completamente gratuita. O atleta não paga nada, nem taxas.
-    Status final da inscrição: **Cortesia**.
-  </Card>
   <Card title="Gratuito + Taxa" icon="shield-check">
     Isenta o valor base, mas o atleta paga apenas as taxas de processamento.
     Útil para inscrições cortesia onde o custo da plataforma é cobrado.
   </Card>
 </CardGroup>
+
+<Info>
+O tipo **Cortesia total** (isenção completa, sem nenhuma taxa) só pode ser criado por administradores da plataforma. Se precisar de uma cortesia sem custo algum para o atleta, entre em contato com o suporte.
+</Info>
 
 ## Criando um cupom
 
@@ -34,10 +34,12 @@ O Passo Giro suporta quatro tipos de cupom:
 
 | Campo | Descrição |
 |-------|-----------|
-| Código | Código que o atleta digitará. Ex: `AMIGO20` |
-| Tipo | Percentual, Fixo, Cortesia ou Gratuito+Taxa |
+| Código | Código que o atleta digitará. Ex: `AMIGO20` (automaticamente convertido para maiúsculas) |
+| Tipo | Percentual, Fixo ou Gratuito+Taxa |
 | Valor | Percentual (ex: 20) ou valor fixo (ex: 15.00) |
 | Limite de usos | Quantas vezes o cupom pode ser usado (deixe em branco para ilimitado) |
+| Limite por atleta | Quantas vezes o mesmo atleta pode usar o cupom |
+| CPFs autorizados | Se preenchido, apenas atletas com CPF nessa lista podem usar o cupom. Aceita com ou sem formatação (ex: `123.456.789-00` ou `12345678900`) |
 | Válido até | Data de expiração do cupom |
 | Categorias elegíveis | Se vazio, vale para todas. Selecione para restringir |
 | Ativo | Se o cupom está habilitado |
@@ -48,39 +50,75 @@ O Passo Giro suporta quatro tipos de cupom:
 
 - Um cupom só pode ser aplicado **uma vez por inscrição**
 - O código é **case-insensitive** — `amigo20` funciona igual a `AMIGO20`
-- Se o cupom tiver limite de usos, ao esgotar as cotas ele é automaticamente desativado
+- Se o cupom tiver limite de usos, ao esgotar as cotas ele fica indisponível
 - Cupons não se acumulam — apenas um por inscrição
+- O desconto é aplicado sobre o **preço da categoria**; as taxas da plataforma são calculadas separadamente
+- O sistema **não consome a cota** ao gerar o PIX — a cota só é decrementada quando o pagamento é confirmado (webhook)
 
 ## Cupom percentual — como o desconto é calculado
 
-O desconto percentual incide sobre o **valor base da inscrição** (preço da categoria antes das taxas).
+O desconto percentual incide sobre o **preço da categoria** (antes das taxas).
 
 ```
-Valor base: R$ 100,00
+Preço da categoria: R$ 100,00
 Cupom: 20% de desconto
 Desconto: R$ 20,00
-Valor com desconto: R$ 80,00
+Base após desconto: R$ 80,00
 Taxas calculadas sobre: R$ 80,00
 ```
 
-## Cortesia — sem nenhum custo
+### Percentual de 100%
 
-Com cupom de cortesia (100% de desconto), o atleta não paga nada. A inscrição é confirmada imediatamente como **Cortesia** sem passar pelo fluxo de pagamento.
+Se o cupom percentual for de 100%, o preço da categoria vai a zero — mas **as taxas da plataforma ainda são cobradas**:
+
+```
+Preço da categoria: R$ 50,00
+Cupom: 100% de desconto
+Base após desconto: R$ 0,00
+Taxas da plataforma: cobradas normalmente
+Atleta paga: somente as taxas
+```
+
+Este comportamento é equivalente ao tipo "Gratuito + Taxa".
+
+## Cupom de valor fixo — comportamento quando excede o preço
+
+Se o valor fixo do cupom for maior que o preço da categoria, o desconto é **limitado ao preço da categoria** — nunca gera crédito. As taxas da plataforma ainda são cobradas:
+
+```
+Preço da categoria: R$ 10,00
+Cupom FIXED: R$ 50,00
+Desconto aplicado: R$ 10,00 (capped ao preço da categoria)
+Base após desconto: R$ 0,00
+Taxas da plataforma: cobradas normalmente
+Atleta paga: somente as taxas
+```
 
 ## Gratuito + Taxa — apenas as taxas
 
-Com esse tipo, o valor base é zerado mas as taxas de processamento da plataforma são cobradas:
+Com esse tipo, o valor base é zerado e o atleta paga somente as taxas de processamento:
 
 ```
-Valor base: R$ 100,00
-Desconto: R$ 100,00 (100% isenção base)
-Taxa plataforma calculada sobre: R$ 0,00 (base zero)
+Preço da categoria: R$ 100,00
+Desconto: R$ 100,00 (100% da base)
+Base após desconto: R$ 0,00
 Atleta paga: somente a taxa de processamento
 ```
 
 <Info>
 As taxas exatas dependem da configuração do gateway. Veja [Taxas e Cálculos](/sistema/taxas-calculos) para detalhes.
 </Info>
+
+## Restrição por CPF
+
+Para limitar um cupom a atletas específicos, preencha o campo **CPFs autorizados** com um ou mais CPFs separados por vírgula. Apenas atletas cujo CPF estiver na lista poderão aplicar o cupom.
+
+- Aceita CPF com ou sem formatação: `123.456.789-00` e `12345678900` são equivalentes
+- A verificação usa o CPF do atleta inscrito — em inscrições de dependentes, o CPF verificado é o do dependente
+
+<Warning>
+Se um atleta tentar aplicar um cupom com restrição de CPF e o CPF dele não estiver na lista, o sistema exibirá uma mensagem de erro — o cupom **não será aplicado** mesmo que o código esteja correto.
+</Warning>
 
 ## Monitorando o uso dos cupons
 

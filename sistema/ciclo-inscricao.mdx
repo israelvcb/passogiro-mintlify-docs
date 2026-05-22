@@ -101,6 +101,27 @@ stateDiagram-v2
 
 ---
 
+## Acesso à página de pagamento
+
+A tela `/pagamento/{id}` verifica o status da inscrição logo na carga — antes de qualquer interação do atleta. Apenas inscrições nos estados abaixo **permitem** o fluxo de pagamento; os demais exibem uma tela de bloqueio imediatamente.
+
+| Status | Acesso | Tela exibida |
+|--------|--------|-------------|
+| `AWAITING_PAYMENT` | ✅ | Seleção de método / QR Code / Checkout |
+| `AWAITING_CATEGORY_CHANGE` | ✅ | Fluxo de pagamento da diferença de categoria |
+| `PAID` / `CATEGORY_CHANGED` | ⛔ | Tela de sucesso com comprovante |
+| `COURTESY` | ⛔ | "Você está inscrito! Inscrição cortesia — nenhum pagamento necessário." |
+| `CANCELLED` | ⛔ | "Esta inscrição foi cancelada." |
+| `EXPIRED` | ⛔ | "O prazo de pagamento expirou." |
+| `REFUNDED` | ⛔ | "O pagamento desta inscrição foi estornado." |
+| `PENDING` | ⛔ | "Inscrição em análise — aguarde aprovação do organizador." |
+
+<Info>
+A verificação ocorre em dois momentos independentes: primeiro quando o `registrationPaymentSummary` retorna (guarda rápido, ainda na montagem da página), e depois quando o `checkPaymentStatus` completa (redundância). Isso garante que inscrições em estado inválido sejam bloqueadas antes de qualquer tentativa de geração de cobrança.
+</Info>
+
+---
+
 ## Inscrições simultâneas
 
 <Warning>

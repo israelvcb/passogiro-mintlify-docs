@@ -123,6 +123,35 @@ gatewayFee = payerTotal − payer
 
 ---
 
+## Parcelamento — limite por valor
+
+A Asaas exige um **valor mínimo de R$5,00 por parcela**. O sistema calcula automaticamente o número máximo de parcelas viável para cada valor total:
+
+```
+maxParcelas = ⌊ payerTotalCents / 500 ⌋   (mínimo: 1)
+```
+
+**Exemplo:** valor total R$17,21
+
+| Parcelas | Valor por parcela | Disponível? |
+|----------|-----------------|-------------|
+| 1× | R$17,21 | ✅ |
+| 2× | R$8,61 | ✅ |
+| 3× | R$5,74 | ✅ |
+| 4× | R$4,30 | ❌ abaixo de R$5 |
+| 5× | R$3,44 | ❌ abaixo de R$5 |
+
+O sistema aplica esse limite em dois momentos:
+
+1. **`previewPaymentBreakdown`** — retorna erro para parcelas inválidas; o frontend recebe `null` e **esconde a opção automaticamente** no seletor de parcelamento.
+2. **`AsaasAdapter.initiate`** — capa `maxInstallmentCount` ao valor real antes de enviar à API, mesmo que o chamador passe um número maior.
+
+<Info>
+Este limite é específico da Asaas. Outros gateways definem suas próprias regras implementando `maxInstallmentsForAmount()` na interface `PaymentGatewayPort`. O `FeeEngine` e o serviço de pagamento consultam esse método automaticamente.
+</Info>
+
+---
+
 ## Gross-up para cartão
 
 No cartão, o gross-up garante que — após a Asaas deduzir sua taxa — a plataforma receba exatamente o `expectedNetCents` alvo:

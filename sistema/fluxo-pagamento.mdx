@@ -119,7 +119,10 @@ flowchart LR
         5. Retorna URL de checkout hospedada pela Asaas
       </Step>
       <Step title="Redireciona para checkout Asaas">
-        Frontend abre link em nova aba. Tela interna fica em modo "aguardando" com polling.
+        Frontend redireciona para a URL hospedada pela Asaas (`window.location.href = checkoutUrl`). Ao concluir, cancelar ou a sessão expirar, a Asaas redireciona de volta para a tela de pagamento com query params de retorno — veja [Retorno do checkout externo](#retorno-do-checkout-externo).
+      </Step>
+      <Step title="Aguardando confirmação (CARD_CONFIRMING)">
+        Ao retornar com `?status=paid`, o frontend entra em `CARD_CONFIRMING`: spinner ativo, WebSocket e polling escutando. O webhook pode chegar antes mesmo de o atleta ver a tela.
       </Step>
       <Step title="Webhook Asaas confirma">
         Backend recebe `POST /payments/webhook/asaas`, chama `markPaymentAsPaid()`.
@@ -164,6 +167,57 @@ flowchart LR
 <Info>
 **Gross-up cartão:** o valor cobrado do atleta já inclui a taxa da Asaas embutida. O objetivo é garantir que, após a Asaas deduzir (ex: 3,49% + R$0,49) mais a antecipação, a plataforma receba exatamente o `expectedNetCents` alvo. Veja [Taxas e Cálculos](/sistema/taxas-calculos).
 </Info>
+
+---
+
+## Retorno do checkout externo
+
+Gateways que usam checkout hospedado (hoje: Asaas para cartão) redirecionam o atleta de volta para a tela de pagamento ao final — seja por confirmação, cancelamento ou expiração. As URLs de retorno são construídas **pelo backend** a partir de variáveis de ambiente e nunca aceitas do cliente:
+
+```
+/pagamento/{registrationId}?status=paid&method=CREDIT_CARD
+/pagamento/{registrationId}?status=abandoned&method=CREDIT_CARD
+/pagamento/{registrationId}?status=expired&method=CREDIT_CARD
+```
+
+O frontend lê os dois params ao montar e limpa a URL via `replaceState` para evitar reprocessamento no histórico do browser.
+
+| `status` | Comportamento |
+|----------|--------------|
+| `paid` | Entra em `CARD_CONFIRMING` — spinner + WebSocket/polling ativos. Se o webhook confirmar em < 2 min → tela de sucesso. Após 2 min sem resposta → `CARD_PENDING` ("em processamento — sua inscrição será confirmada automaticamente"). |
+| `abandoned` | Volta ao SELECT com **banner rose**: "Pagamento não concluído — sua inscrição está reservada, tente novamente quando quiser." |
+| `expired` | Volta ao SELECT com **banner âmbar**: "A sessão de pagamento expirou — inicie um novo pagamento abaixo." |
+
+O param `method` define qual aba fica pré-selecionada ao voltar ao SELECT. Qualquer gateway futuro que use redirect funciona pelo mesmo mecanismo sem mudança no frontend.
+
+<Info>
+O valor `status=success` (gerado por versões anteriores) é aceito como sinônimo de `paid` para compatibilidade com links em trânsito.
+</Info>
+
+### Por que não depender só do redirect?
+
+```mermaid
+flowchart LR
+  R["?status=paid"] --> C["CARD_CONFIRMING\nWebSocket + polling"]
+  C -->|"Webhook < 2 min"| S["✅ Sucesso"]
+  C -->|"2 min sem webhook"| P["CARD_PENDING\n'em processamento'"]
+  P -->|"Webhook chega depois"| S
+```
+
+O redirect é apenas um sinal de "o atleta voltou". A confirmação real sempre vem do webhook — o `CARD_CONFIRMING` garante que o atleta veja o resultado correto mesmo se o webhook chegar milissegundos depois do redirect ou se ele fechar a aba e voltar mais tarde.
+
+---
+
+## Sanitização de texto nos gateways
+
+O campo de descrição do pagamento (usado como `comment` na Woovi e `items[].name` na Asaas) é sanitizado automaticamente antes de ser enviado ao gateway:
+
+- **Emojis e símbolos pictográficos** (`\p{Extended_Pictographic}`) são removidos — ex: "🏃 Corrida 9ª Festa" → "Corrida 9ª Festa"
+- **Caracteres de controle ASCII** (`0x00–0x1F`, `0x7F`) são removidos
+- **Espaços múltiplos** são colapsados e o texto é trimado
+- **Truncagem**: Asaas limita `items[].name` a 30 caracteres; o truncate respeita a sanitização (nunca deixa trailing space)
+
+Isso evita erros de validação da API do gateway causados por caracteres não aceitos em nomes de eventos ou categorias.
 
 ---
 
