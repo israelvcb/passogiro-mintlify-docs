@@ -31,14 +31,14 @@ Pagamentos via PIX têm liquidação **instantânea**. Assim que o webhook de co
 
 ## Cartão — Período de Hold
 
-Pagamentos via cartão (Asaas) passam por um período de hold antes de ficarem disponíveis. Isso ocorre porque a operadora pode fazer estorno (chargeback) dentro de um prazo.
+Pagamentos via cartão passam por um período de hold antes de ficarem disponíveis. Isso ocorre porque a operadora pode fazer estorno (chargeback) dentro de um prazo.
 
 O tempo de hold é configurado por evento no campo `settlementHoldDays` do `PaymentMethodConfig`. O **padrão** é **32 dias** (variável `ASAAS_DEFAULT_SETTLEMENT_HOLD_DAYS`).
 
 ### Fluxo do cartão com hold
 
 ```
-Pagamento confirmado (webhook Asaas)
+Pagamento confirmado (webhook)
         ↓
 clearanceStatus = PENDING
 Valor somado a: totalPendingClearance
@@ -68,7 +68,7 @@ Cada evento tem uma conta financeira com os seguintes campos:
 | Campo | Descrição | Visível para |
 |-------|-----------|-------------|
 | `totalReceived` | Soma bruta de todos os pagamentos confirmados | Organizador e Admin |
-| `totalPendingClearance` | Valor de cartão ainda em período de hold | Organizador ("Aguardando liquidação") e Admin ("Cartão em hold") |
+| `totalPendingClearance` | Valor de cartão ainda em período de hold | Organizador ("Aguardando liquidação") e Admin |
 | `totalNetReceived` | Valor já liquidado e disponível (PIX imediato + cartão após hold) | Organizador e Admin |
 | `totalWithdrawn` | Total já sacado pelo organizador | Organizador e Admin |
 | `totalNetAvailable` | Saldo disponível para novo saque (`totalNetReceived − totalWithdrawn`) | Organizador e Admin |
@@ -81,7 +81,7 @@ saldo disponível = totalNetReceived − totalWithdrawn
 
 ### Cálculo do líquido creditado
 
-Ao mover um pagamento de cartão de `totalPendingClearance` para `totalNetReceived`, o cron desconta:
+Ao confirmar um pagamento, o sistema calcula o valor que vai ao organizador (ou ao saldo pendente para cartão):
 
 ```
 líquido creditado = amount − moneyRate − gatewayFeeAmount
@@ -89,7 +89,7 @@ líquido creditado = amount − moneyRate − gatewayFeeAmount
 
 - `amount` — valor total cobrado do atleta
 - `moneyRate` — snapshot da taxa operacional da plataforma (custo por inscrição)
-- `gatewayFeeAmount` — taxa cobrada pelo gateway Asaas, já calculada pelo FeeEngine no momento da inscrição
+- `gatewayFeeAmount` — taxa cobrada pelo gateway de pagamento, calculada pelo FeeEngine no momento da inscrição
 
 O mesmo cálculo é usado em `buildWithdrawalPaymentAllocations` ao validar o saldo disponível para saque.
 
@@ -99,8 +99,8 @@ O mesmo cálculo é usado em `buildWithdrawalPaymentAllocations` ao validar o sa
 
 | Método | Hold | Liquidação | Campo inicial |
 |--------|------|-----------|---------------|
-| PIX (Woovi) | 0 dias | Imediata no webhook | `totalNetReceived` |
-| Cartão (Asaas) | `settlementHoldDays` (padrão: 32) | Cron diário após hold | `totalPendingClearance` → depois `totalNetReceived` |
+| PIX | 0 dias | Imediata no webhook | `totalNetReceived` |
+| Cartão | `settlementHoldDays` (padrão: 32 dias) | Cron diário após hold | `totalPendingClearance` → depois `totalNetReceived` |
 | Cortesia (FREE) | — | Não aplicável | Nenhum campo financeiro alterado |
 
 ---
@@ -111,7 +111,7 @@ No parcelamento, o banco confirma mensalmente cada parcela ao longo de N meses. 
 
 ### Por que em bloco?
 
-O campo `amount` do registro `Payment` representa o **valor total do parcelamento** (ex.: 5× R$100 = R$500). Quando a Asaas confirma a parcela 1, o backend credita o líquido total esperado em `totalPendingClearance` e define `availableAt`. As parcelas 2–N apenas incrementam `paidInstallments` e acumulam `actualNetCents` para conciliação — sem alterar `totalPendingClearance` novamente.
+O campo `amount` do registro `Payment` representa o **valor total do parcelamento** (ex.: 5× R$100 = R$500). Quando o gateway confirma a parcela 1, o backend credita o líquido total esperado em `totalPendingClearance` e define `availableAt`. As parcelas 2–N apenas incrementam `paidInstallments` e acumulam `actualNetCents` para conciliação — sem alterar `totalPendingClearance` novamente.
 
 ```
 Parcela 1 confirmada  → totalPendingClearance += líquido total esperado (net)
@@ -136,7 +136,7 @@ O hold de 32 dias cobre toda a janela de parcelamento típico, garantindo que ev
 </Warning>
 
 <Info>
-Use `paidInstallments` / `totalInstallments` para saber quantas parcelas o banco já confirmou. O `installmentGroupId` (ID do grupo Asaas) permite filtrar todas as confirmações de um mesmo parcelamento para auditoria detalhada.
+Use `paidInstallments` / `totalInstallments` para saber quantas parcelas o banco já confirmou. O `installmentGroupId` permite filtrar todas as confirmações de um mesmo parcelamento para auditoria detalhada. Para detalhes sobre correção de `totalInstallments` quando o atleta muda a parcela no checkout, veja [Fluxo de Pagamento](/sistema/fluxo-pagamento#correção-de-totalinstallments).
 </Info>
 
 ---

@@ -3,7 +3,7 @@ title: "Fluxo de Pagamento"
 description: "Como funciona o fluxo completo de pagamento no Passo Giro, do PIX ao cartão."
 ---
 
-O Passo Giro suporta dois métodos: **PIX** via <Tooltip tip="Gateway de pagamentos instantâneos via QR Code PIX.">Woovi</Tooltip> e **cartão de crédito** via <Tooltip tip="Gateway de pagamentos com cartão, suporta parcelamento e antecipação de recebíveis.">Asaas</Tooltip>. O roteamento é automático com base no `PaymentMethodConfig` do evento.
+O Passo Giro suporta **PIX** e **cartão de crédito**. O gateway utilizado para cada método é configurável por evento via `PaymentMethodConfig` — trocar ou adicionar um gateway não exige alteração no frontend.
 
 ---
 
@@ -11,18 +11,18 @@ O Passo Giro suporta dois métodos: **PIX** via <Tooltip tip="Gateway de pagamen
 
 ```mermaid
 flowchart LR
-  subgraph PIX ["PIX (Woovi)"]
+  subgraph PIX ["PIX"]
     P1[Atleta escolhe PIX] --> P2[previewBreakdown]
     P2 --> P3[Gerar QR Code]
     P3 --> P4[Atleta paga no banco]
-    P4 --> P5[Webhook Woovi]
+    P4 --> P5[Webhook gateway PIX]
     P5 --> P6[✅ PAID\nliquidação imediata]
   end
-  subgraph CARD ["Cartão (Asaas)"]
+  subgraph CARD ["Cartão de Crédito"]
     C1[Atleta escolhe Cartão] --> C2[previewBreakdown N×]
     C2 --> C3[Preencher endereço]
-    C3 --> C4[Checkout Asaas]
-    C4 --> C5[Webhook Asaas]
+    C3 --> C4[Checkout externo]
+    C4 --> C5[Webhook gateway cartão]
     C5 --> C6[✅ PAID\nhold ~32 dias]
     C6 --> C7[Cron libera saldo]
   end
@@ -34,7 +34,7 @@ flowchart LR
 
 ---
 
-## Fluxo PIX (Woovi)
+## Fluxo PIX
 
 <Tabs>
   <Tab title="Passo a passo" icon="list-ol">
@@ -50,15 +50,15 @@ flowchart LR
 
         1. Valida o cupom (se houver)
         2. Calcula via FeeEngine
-        3. `WooviAdapter` → cria cobrança na Woovi
+        3. Gateway PIX → cria cobrança
         4. Persiste `Payment` com status `AWAITING_PAYMENT`
         5. Retorna QR Code + código copia-cola
       </Step>
       <Step title="QR Code exibido — validade 30 min">
         Frontend exibe o QR Code e fica ouvindo via WebSocket.
       </Step>
-      <Step title="Webhook Woovi confirma">
-        Backend recebe `POST /payments/webhook/woovi`, chama `markPaymentAsPaid()`.
+      <Step title="Webhook confirma">
+        Backend recebe `POST /payments/webhook/{provider}`, chama `markPaymentAsPaid()`.
         Saldo creditado em `totalNetReceived` **imediatamente**.
       </Step>
       <Step title="Inscrição confirmada">
@@ -72,19 +72,19 @@ flowchart LR
       actor Atleta
       participant FE as Frontend
       participant BE as Backend
-      participant Woovi
+      participant GW as Gateway PIX
 
       Atleta->>FE: Escolhe PIX
       FE->>BE: previewPaymentBreakdown(coupon?)
       BE-->>FE: breakdown (sem criar pagamento)
       Atleta->>FE: Clica "Gerar QR Code"
       FE->>BE: initiatePayment(PIX)
-      BE->>Woovi: Criar cobrança
-      Woovi-->>BE: QR Code + expiresAt
+      BE->>GW: Criar cobrança
+      GW-->>BE: QR Code + expiresAt
       BE-->>FE: QR Code
       FE-->>Atleta: Exibe QR Code (30 min)
-      Atleta->>Woovi: Paga no app do banco
-      Woovi->>BE: POST /webhook/woovi
+      Atleta->>GW: Paga no app do banco
+      GW->>BE: POST /payments/webhook/{provider}
       BE->>BE: markPaymentAsPaid()
       BE-->>FE: WebSocket: PAID
       FE-->>Atleta: Tela de sucesso
@@ -93,12 +93,12 @@ flowchart LR
 </Tabs>
 
 <Check>
-**Cupom FREE:** não gera cobrança na Woovi. Backend detecta `payerTotalCents = 0`, cria `Payment` com status `COURTESY` e confirma a inscrição imediatamente — sem webhook necessário.
+**Cupom FREE:** não gera cobrança no gateway. Backend detecta `payerTotalCents = 0`, cria `Payment` com status `COURTESY` e confirma a inscrição imediatamente — sem webhook necessário.
 </Check>
 
 ---
 
-## Fluxo Cartão de Crédito (Asaas)
+## Fluxo Cartão de Crédito
 
 <Tabs>
   <Tab title="Passo a passo" icon="list-ol">
@@ -107,25 +107,25 @@ flowchart LR
         Frontend chama `previewPaymentBreakdown` para cada número de parcelas disponíveis e exibe os valores com gross-up já incluído.
       </Step>
       <Step title="Preencher endereço e escolher parcelas">
-        Endereço completo é **obrigatório** pela Asaas — salvo no perfil do atleta antes de prosseguir.
+        Endereço completo é **obrigatório** pelo gateway de cartão — salvo no perfil do atleta antes de prosseguir.
       </Step>
       <Step title="Clicar em 'Pagar com Cartão'">
         Frontend chama `initiatePayment(method=CREDIT_CARD, installments=N)`. Backend:
 
         1. Valida o cupom (se houver)
         2. Calcula via FeeEngine (com gross-up)
-        3. `AsaasAdapter` → cria sessão de checkout
+        3. Gateway de cartão → cria sessão de checkout hospedada
         4. Persiste `Payment` com status `AWAITING_PAYMENT`
-        5. Retorna URL de checkout hospedada pela Asaas
+        5. Retorna URL de checkout externo
       </Step>
-      <Step title="Redireciona para checkout Asaas">
-        Frontend redireciona para a URL hospedada pela Asaas (`window.location.href = checkoutUrl`). Ao concluir, cancelar ou a sessão expirar, a Asaas redireciona de volta para a tela de pagamento com query params de retorno — veja [Retorno do checkout externo](#retorno-do-checkout-externo).
+      <Step title="Redireciona para checkout externo">
+        Frontend redireciona para a URL hospedada pelo gateway (`window.location.href = checkoutUrl`). Ao concluir, cancelar ou a sessão expirar, o gateway redireciona de volta — veja [Retorno do checkout externo](#retorno-do-checkout-externo).
       </Step>
       <Step title="Aguardando confirmação (CARD_CONFIRMING)">
         Ao retornar com `?status=paid`, o frontend entra em `CARD_CONFIRMING`: spinner ativo, WebSocket e polling escutando. O webhook pode chegar antes mesmo de o atleta ver a tela.
       </Step>
-      <Step title="Webhook Asaas confirma">
-        Backend recebe `POST /payments/webhook/asaas`, chama `markPaymentAsPaid()`.
+      <Step title="Webhook confirma">
+        Backend recebe `POST /payments/webhook/{provider}`, chama `markPaymentAsPaid()`.
         Valor vai para `totalPendingClearance` (hold padrão: 32 dias).
       </Step>
       <Step title="Cron job libera o saldo">
@@ -140,7 +140,7 @@ flowchart LR
       actor Atleta
       participant FE as Frontend
       participant BE as Backend
-      participant Asaas
+      participant GW as Gateway Cartão
       participant Cron
 
       Atleta->>FE: Escolhe Cartão N×
@@ -148,12 +148,12 @@ flowchart LR
       BE-->>FE: breakdown com gross-up
       Atleta->>FE: Confirma endereço + parcelas
       FE->>BE: initiatePayment(CARD, N)
-      BE->>Asaas: Criar checkout
-      Asaas-->>BE: checkoutUrl
+      BE->>GW: Criar checkout
+      GW-->>BE: checkoutUrl
       BE-->>FE: checkoutUrl
-      FE-->>Atleta: Redireciona para Asaas
-      Atleta->>Asaas: Preenche dados do cartão
-      Asaas->>BE: POST /webhook/asaas
+      FE-->>Atleta: Redireciona para gateway
+      Atleta->>GW: Preenche dados do cartão
+      GW->>BE: POST /payments/webhook/{provider}
       BE->>BE: markPaymentAsPaid() → totalPendingClearance
       BE-->>FE: WebSocket: PAID
       FE-->>Atleta: Tela de sucesso
@@ -165,14 +165,14 @@ flowchart LR
 </Tabs>
 
 <Info>
-**Gross-up cartão:** o valor cobrado do atleta já inclui a taxa da Asaas embutida. O objetivo é garantir que, após a Asaas deduzir (ex: 3,49% + R$0,49) mais a antecipação, a plataforma receba exatamente o `expectedNetCents` alvo. Veja [Taxas e Cálculos](/sistema/taxas-calculos).
+**Gross-up cartão:** o valor cobrado do atleta já inclui a taxa do gateway embutida. O objetivo é garantir que, após o gateway deduzir sua taxa mais a antecipação (se configurada), a plataforma receba exatamente o `expectedNetCents` alvo. Veja [Taxas e Cálculos](/sistema/taxas-calculos).
 </Info>
 
 ---
 
 ## Retorno do checkout externo
 
-Gateways que usam checkout hospedado (hoje: Asaas para cartão) redirecionam o atleta de volta para a tela de pagamento ao final — seja por confirmação, cancelamento ou expiração. As URLs de retorno são construídas **pelo backend** a partir de variáveis de ambiente e nunca aceitas do cliente:
+Gateways que usam checkout hospedado redirecionam o atleta de volta para a tela de pagamento ao final — seja por confirmação, cancelamento ou expiração. As URLs de retorno são construídas **pelo backend** a partir de variáveis de ambiente e nunca aceitas do cliente:
 
 ```
 /pagamento/{registrationId}?status=paid&method=CREDIT_CARD
@@ -210,14 +210,14 @@ O redirect é apenas um sinal de "o atleta voltou". A confirmação real sempre 
 
 ## Sanitização de texto nos gateways
 
-O campo de descrição do pagamento (usado como `comment` na Woovi e `items[].name` na Asaas) é sanitizado automaticamente antes de ser enviado ao gateway:
+O campo de descrição do pagamento é sanitizado automaticamente antes de ser enviado ao gateway:
 
 - **Emojis e símbolos pictográficos** (`\p{Extended_Pictographic}`) são removidos — ex: "🏃 Corrida 9ª Festa" → "Corrida 9ª Festa"
 - **Caracteres de controle ASCII** (`0x00–0x1F`, `0x7F`) são removidos
 - **Espaços múltiplos** são colapsados e o texto é trimado
-- **Truncagem**: Asaas limita `items[].name` a 30 caracteres; o truncate respeita a sanitização (nunca deixa trailing space)
+- **Truncagem** configura-se por gateway (ex: limite de 30 caracteres no campo de item); o truncate respeita a sanitização (nunca deixa trailing space)
 
-Isso evita erros de validação da API do gateway causados por caracteres não aceitos em nomes de eventos ou categorias.
+Isso evita erros de validação causados por caracteres não aceitos em nomes de eventos ou categorias.
 
 ---
 
@@ -225,12 +225,12 @@ Isso evita erros de validação da API do gateway causados por caracteres não a
 
 O `PaymentRoutingService` resolve qual adapter usar com base no `PaymentMethodConfig` do evento:
 
-| Método | Gateway padrão |
-|--------|---------------|
-| PIX | <Badge color="green" size="sm">Woovi</Badge> |
-| Cartão | <Badge color="blue" size="sm">Asaas</Badge> |
+| Método | Gateway padrão (configurável) |
+|--------|-------------------------------|
+| PIX | Gateway PIX definido no evento (fallback: env `PIX_PAYMENT_GATEWAY`) |
+| Cartão | Gateway de cartão definido no evento (fallback: env `CARD_PAYMENT_GATEWAY`) |
 
-Se o organizador não tiver um gateway configurado para o método escolhido, a opção não é exibida para o atleta.
+Se o evento não tiver um `PaymentMethodConfig` ativo para o método escolhido, essa opção não é exibida para o atleta.
 
 ---
 
@@ -258,45 +258,60 @@ flowchart LR
 
 ## Rastreamento de parcelas confirmadas
 
-Para pagamentos parcelados via cartão (Asaas), o sistema registra individualmente cada parcela confirmada pelo banco, permitindo auditoria e controle de repasse ao organizador.
+Para pagamentos parcelados via cartão, o sistema registra individualmente cada parcela confirmada pelo banco, permitindo auditoria e controle de repasse ao organizador.
 
 ### Campos na tabela `Payment`
 
 | Campo | Tipo | Descrição |
 |-------|------|-----------|
-| `totalInstallments` | `Int?` | Número de parcelas escolhidas pelo atleta |
+| `totalInstallments` | `Int?` | Número de parcelas **efetivamente escolhido** pelo atleta (corrigido via webhook se diferente do frontend) |
 | `paidInstallments` | `Int` | Quantas parcelas o banco já confirmou (começa em `0`) |
-| `installmentGroupId` | `String?` | ID do grupo de parcelamento no gateway (Asaas: `payment.installment`). Todas as N confirmações de um mesmo parcelamento compartilham este ID |
+| `installmentGroupId` | `String?` | ID do grupo de parcelamento no gateway. Todas as N confirmações de um mesmo parcelamento compartilham este ID |
 
 ### Fluxo de confirmações
 
 ```mermaid
 sequenceDiagram
-  participant Asaas
+  participant GW as Gateway Cartão
   participant BE as Backend
   participant DB as Banco
 
-  Note over Asaas,DB: Parcela 1 (ou pagamento único) — crédito do líquido total
-  Asaas->>BE: webhook CHECKOUT_PAID / PAYMENT_CONFIRMED (installmentNumber=1)
-  BE->>DB: internalStatus = PAID<br/>paidInstallments += 1<br/>installmentGroupId = "asaas-group-id"<br/>totalPendingClearance += líquido total esperado<br/>availableAt = hoje + holdDays
+  Note over GW,DB: Parcela 1 (ou pagamento único) — crédito do líquido total
+  GW->>BE: webhook PAID (installmentNumber=1)
+  BE->>GW: resolveInstallmentCount(groupId)
+  GW-->>BE: installmentCount = N real
+  BE->>DB: internalStatus = PAID<br/>totalInstallments = N real<br/>paidInstallments += 1<br/>installmentGroupId = groupId<br/>totalPendingClearance += líquido total esperado<br/>availableAt = hoje + holdDays
   DB-->>BE: ✅
 
-  Note over Asaas,DB: Parcelas 2, 3 … N — auditoria apenas (sem crédito adicional)
-  Asaas->>BE: webhook PAYMENT_CONFIRMED (installmentNumber=2)
+  Note over GW,DB: Parcelas 2, 3 … N — auditoria apenas (sem crédito adicional)
+  GW->>BE: webhook PAID (installmentNumber=2)
   BE->>DB: paidInstallments += 1<br/>actualNetCents += líquido desta parcela
   DB-->>BE: ✅
 ```
+
+### Correção de `totalInstallments`
+
+O atleta seleciona no frontend o **número máximo de parcelas** que aceita. No checkout externo do gateway, ele pode escolher um número menor. O webhook da primeira parcela dispara uma consulta à API do gateway para obter o total real:
+
+```
+Frontend informa: 3×
+Atleta escolhe no checkout: 2×
+Webhook parcela 1 chega → backend consulta grupo → installmentCount = 2
+Payment.totalInstallments atualizado: 3 → 2
+```
+
+Isso garante que `totalInstallments` reflita sempre a escolha real do atleta, e não apenas o limite máximo configurado pelo organizador.
 
 ### Idempotência por parcela
 
 | Situação | Comportamento |
 |----------|--------------|
 | Webhook duplicado da **parcela 1** | Ignorado — `internalStatus = PAID` bloqueia reprocessamento antes de qualquer alteração em `totalPendingClearance` |
-| Webhook duplicado de **parcela 2+** | Não há guarda por parcela; um duplicata incrementaria `paidInstallments` e `actualNetCents` erroneamente. Na prática a Asaas não reenvia duplicatas de confirmações já processadas. **`totalPendingClearance` não é afetado** (parcelas 2+ são somente auditoria) |
-| Parcelas **fora de ordem** | Improvável com Asaas (débito mensal sequencial), mas seguro — todos os campos usam `{ increment }`, não SET absoluto |
+| Webhook duplicado de **parcela 2+** | `totalPendingClearance` não é afetado (parcelas 2+ são somente auditoria). Risco de `paidInstallments` incrementar novamente — na prática, gateways não reenviam confirmações já processadas |
+| Parcelas **fora de ordem** | Seguro — todos os campos usam `{ increment }`, não SET absoluto |
 
 <Info>
-O `installmentGroupId` permite consultar todas as confirmações de um parcelamento com um único filtro: `WHERE installmentGroupId = 'asaas-group-id'`. Útil para auditoria e para calcular quanto já foi recebido de um parcelamento específico.
+O `installmentGroupId` permite consultar todas as confirmações de um parcelamento com um único filtro. Útil para auditoria e para calcular quanto já foi recebido de um parcelamento específico.
 </Info>
 
 ### Exemplo de auditoria

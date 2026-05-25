@@ -12,9 +12,31 @@ Em **Admin → Saques**, você vê todas as solicitações pendentes de aprovaç
 | Organizador | Nome e CNPJ/CPF |
 | Evento | Qual evento originou os fundos |
 | Valor solicitado | Quantia pedida pelo organizador |
-| Saldo disponível | Saldo líquido total disponível do organizador |
+| Saldo disponível | Saldo líquido disponível (`totalNetReceived − totalWithdrawn`) |
 | Data da solicitação | Quando o saque foi pedido |
 | Dados bancários | Conta de destino |
+
+---
+
+## Como o saldo disponível é calculado
+
+O saldo disponível para saque é composto pelos pagamentos já liquidados. Para cada pagamento confirmado, o sistema calcula:
+
+```
+líquido = amount − moneyRate − gatewayFeeAmount
+```
+
+- `amount` — valor bruto cobrado do atleta
+- `moneyRate` — taxa de plataforma (snapshot no momento da inscrição)
+- `gatewayFeeAmount` — taxa cobrada pelo gateway de pagamento
+
+Apenas pagamentos com `clearanceStatus = IMMEDIATE` (PIX) ou `clearanceStatus = CLEARED` (cartão após hold) entram no cálculo do saldo disponível. Pagamentos de cartão em hold (`clearanceStatus = PENDING`) **não** estão disponíveis para saque ainda.
+
+<Info>
+Se um organizador questionar a diferença entre o total recebido e o saldo disponível para saque, a causa mais comum é o valor de cartão ainda em `totalPendingClearance`. Veja [Liquidação](/sistema/liquidacao) para o detalhamento completo.
+</Info>
+
+---
 
 ## Processo de aprovação
 
@@ -45,6 +67,8 @@ Após aprovação, a transferência bancária é realizada pelo time financeiro:
 
 O organizador recebe notificação por e-mail de que o saque foi processado.
 
+---
+
 ## Recusar um saque
 
 Se necessário recusar a solicitação:
@@ -55,9 +79,13 @@ Se necessário recusar a solicitação:
 
 O organizador é notificado por e-mail com o motivo e pode fazer nova solicitação após corrigir o problema.
 
+---
+
 ## Saques automáticos
 
 Para organizadores com histórico confiável, é possível configurar aprovação automática abaixo de determinado valor. Entre em contato com a equipe técnica para habilitar essa configuração.
+
+---
 
 ## Auditoria de saques
 

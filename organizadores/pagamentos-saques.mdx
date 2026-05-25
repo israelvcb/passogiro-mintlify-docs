@@ -12,9 +12,11 @@ description: "Como acompanhar os recebimentos e solicitar saques para sua conta 
 | Indicador | Descrição |
 |-----------|-----------|
 | **Total Recebido** | Soma de todos os pagamentos confirmados (valor bruto) |
-| **Pendente de Liquidação** | Valor de cartão ainda em período de hold |
-| **Disponível Líquido** | Valor já liquidado menos taxas — disponível para saque |
+| **Pendente de Liquidação** | Valor de cartão ainda em período de hold — disponível após o prazo |
+| **Disponível Líquido** | Valor já liquidado menos taxas — disponível para saque agora |
 | **Total Sacado** | Soma de todos os saques realizados |
+
+---
 
 ## Entendendo as taxas
 
@@ -27,6 +29,8 @@ O **valor líquido** é o que fica disponível para você após essas deduções
 
 Veja o detalhamento completo em [Taxas e Cálculos](/sistema/taxas-calculos).
 
+---
+
 ## Liquidação de pagamentos
 
 <Tabs>
@@ -36,11 +40,57 @@ Veja o detalhamento completo em [Taxas e Cálculos](/sistema/taxas-calculos).
   <Tab title="Cartão" icon="credit-card">
     Período de **hold** antes de ficar disponível — padrão: **32 dias**.
 
-    O saldo fica em `totalPendingClearance` e é movido para `totalNetReceived` automaticamente após o hold via cron job.
+    O saldo fica em **"Pendente de Liquidação"** e é movido para **"Disponível Líquido"** automaticamente após o hold.
 
     Veja detalhes em [Liquidação](/sistema/liquidacao).
   </Tab>
 </Tabs>
+
+---
+
+## Pagamentos parcelados
+
+Quando um atleta paga com cartão parcelado, o funcionamento do repasse é:
+
+<Info>
+**Crédito em bloco:** o valor total esperado do parcelamento é somado ao saldo **"Pendente de Liquidação"** assim que a **primeira parcela** é confirmada pelo banco. Você não precisa aguardar todas as parcelas — o valor total aparece pendente desde o início.
+</Info>
+
+```
+Atleta paga 5× R$100 = R$500 total
+
+→ Parcela 1 confirmada pelo banco
+  Pendente de Liquidação: +R$500 (líquido após taxas)
+  availableAt: data de confirmação + 32 dias
+
+→ Parcelas 2, 3, 4, 5: banco confirma mensalmente
+  (campo informativo para auditoria — não altera o saldo)
+
+→ Após 32 dias:
+  Pendente de Liquidação: −R$500
+  Disponível Líquido: +R$500
+  → Solicitar saque
+```
+
+### O que o atleta pode mudar no checkout
+
+O atleta seleciona o número máximo de parcelas no nosso site, mas pode escolher um número menor na tela de pagamento do gateway. O sistema detecta a escolha real e registra automaticamente — o saldo refletirá as taxas da parcela efetivamente escolhida.
+
+### Rastreamento de parcelas confirmadas
+
+Na aba **Auditoria** do evento, pagamentos parcelados mostram:
+
+| Campo | Descrição |
+|-------|-----------|
+| `paidInstallments` | Quantas parcelas o banco já confirmou (ex: 3 de 5) |
+| `totalInstallments` | Total de parcelas do parcelamento |
+| Status de liquidação | `PENDING` → `CLEARED` após hold |
+
+<Note>
+O saldo "Disponível Líquido" só muda quando o hold encerra — não quando cada parcela é confirmada. `paidInstallments` é um indicador de auditoria.
+</Note>
+
+---
 
 ## Solicitando um saque
 
@@ -64,12 +114,16 @@ Veja o detalhamento completo em [Taxas e Cálculos](/sistema/taxas-calculos).
 Saques são sujeitos à aprovação do administrador da plataforma.
 </Info>
 
+---
+
 ## Dados bancários
 
 Para receber saques, cadastre sua conta bancária em **Minha Conta → Dados Bancários**:
 
 - Banco, agência e conta (corrente ou poupança)
 - Chave PIX (opcional — para saques mais rápidos)
+
+---
 
 ## Auditoria de transações
 
@@ -80,5 +134,6 @@ Para receber saques, cadastre sua conta bancária em **Minha Conta → Dados Ban
 Na aba **Auditoria**, cada transação mostra:
 - Atleta e inscrição
 - Valor bruto, taxa e valor líquido
-- Gateway utilizado
+- Método de pagamento
 - <Tooltip tip="clearanceStatus: IMMEDIATE (PIX), PENDING (cartão em hold), CLEARED (cartão liquidado)">Status de liquidação</Tooltip>
+- Para parcelamentos: `paidInstallments / totalInstallments`

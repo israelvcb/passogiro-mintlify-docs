@@ -12,10 +12,10 @@ Em **Admin → Pagamentos**, você tem visibilidade completa de todas as transa�
 | Métrica | Descrição |
 |---------|-----------|
 | Total processado (hoje/semana/mês) | Volume financeiro total |
-| Total por gateway | Woovi vs Asaas |
+| Total por gateway | Breakdown por gateway configurado |
 | Taxa de sucesso | % de pagamentos aprovados vs tentados |
-| Em liquidação | Valor de cartão ainda em hold |
-| Disponível líquido total | Soma do saldo disponível de todos os organizadores |
+| Cartão em hold | `totalPendingClearance` — soma de cartão ainda no período de hold |
+| Disponível líquido total | Soma do `totalNetReceived − totalWithdrawn` de todos os organizadores |
 
 ## Listagem de transações
 
@@ -24,22 +24,50 @@ Cada transação exibe:
 - ID interno e ID do gateway
 - Organizador e evento
 - Atleta e inscrição
-- Valor bruto, taxa, valor líquido
-- Gateway utilizado e método (PIX/cartão)
-- Status do pagamento (`PAID`, `PENDING`, `FAILED`, etc.)
-- Status de liquidação (`IMMEDIATE`, `PENDING`, `CLEARED`)
+- Valor bruto, taxa de plataforma, taxa de gateway (`gatewayFeeAmount`), valor líquido
+- Gateway utilizado e método (PIX / Cartão)
+- Status do pagamento (`PAID`, `AWAITING_PAYMENT`, `EXPIRED`, etc.)
+- Status de liquidação (`clearanceStatus`): `IMMEDIATE`, `PENDING`, `CLEARED`
+- `availableAt` — data prevista de liberação (cartão em hold)
 - Data/hora
 
 ## Filtros
 
 | Filtro | Opções |
 |--------|--------|
-| Gateway | Woovi, Asaas |
+| Gateway | Por identificador (ex: woovi, asaas) |
+| Método | PIX, Cartão |
 | Status | Pago, Pendente, Falhou, Reembolsado |
-| Liquidação | Imediata, Pendente, Liquidada |
+| Liquidação | Imediata, Pendente hold, Liquidada |
 | Organizador | Busca por nome |
 | Período | Intervalo de datas |
 | Valor | Faixa de valores |
+
+---
+
+## Monitoramento de parcelamentos
+
+Para pagamentos parcelados via cartão, você pode acompanhar o progresso de cada parcelamento:
+
+| Campo | Descrição |
+|-------|-----------|
+| `totalInstallments` | Total de parcelas escolhido pelo atleta no checkout |
+| `paidInstallments` | Quantas parcelas o banco já confirmou |
+| `installmentGroupId` | ID do grupo — filtre por ele para ver todas as confirmações do parcelamento |
+| `actualNetCents` | Soma acumulada do líquido real confirmado parcela a parcela (reconciliação) |
+| `expectedNetCents` | Líquido esperado calculado pelo FeeEngine no momento da inscrição |
+
+<Info>
+Quando `actualNetCents` difere de `expectedNetCents` após todas as parcelas confirmadas, isso indica uma variação real nas taxas cobradas pelo gateway (ex: mudança na taxa de antecipação). Use para conciliação financeira.
+</Info>
+
+### Parcelamentos incompletos
+
+Se `paidInstallments < totalInstallments` e `availableAt` já passou, investigue:
+1. O atleta pode ter trocado o número de parcelas no checkout (o sistema corrige `totalInstallments` automaticamente ao processar o webhook da parcela 1)
+2. Parcelas podem estar atrasadas no banco — verifique no painel do gateway com o `installmentGroupId`
+
+---
 
 ## Logs de webhooks
 
@@ -49,7 +77,7 @@ Para cada transação, você pode ver o histórico completo de webhooks recebido
 2. Acesse a aba **Webhooks**
 3. Veja cada evento recebido:
    - Timestamp
-   - Payload completo
+   - Payload completo (sem dados sensíveis — chaves de API nunca aparecem em logs)
    - Status de processamento (sucesso/erro)
    - Tentativas de reprocessamento
 
@@ -65,6 +93,20 @@ Se um webhook falhou e o status da inscrição não foi atualizado:
 O reprocessamento tem proteção contra duplo processamento — se o pagamento já foi confirmado anteriormente, a operação é ignorada com segurança.
 </Warning>
 
+---
+
+## Acompanhamento da fila de liquidação (cartão em hold)
+
+Você pode visualizar todos os pagamentos de cartão com `clearanceStatus = PENDING`:
+
+- Filtrar por `availableAt` (próximos a liberar)
+- Ver o total em `totalPendingClearance` por evento/organizador
+- Identificar pagamentos com hold prolongado (> 40 dias sem liberar)
+
+O cron de liquidação roda diariamente. Se um pagamento com `availableAt` passado ainda está `PENDING`, verifique os logs do cron em **Admin → Logs de Sistema**.
+
+---
+
 ## Alertas automáticos
 
 O sistema envia alertas para a equipe admin quando:
@@ -74,11 +116,13 @@ O sistema envia alertas para a equipe admin quando:
 - Saldo negativo em conta de organizador (não deveria ocorrer, mas é monitorado)
 - Tentativa de processamento duplicado detectada
 
+---
+
 ## Investigando um pagamento específico
 
 Para investigar um pagamento específico reportado por um atleta ou organizador:
 
 1. Busque pelo e-mail do atleta ou ID da inscrição
 2. Veja o histórico completo de status
-3. Confira os webhooks recebidos
-4. Se necessário, consulte diretamente no painel do gateway (Woovi/Asaas) com o ID da transação do gateway
+3. Confira os webhooks recebidos (incluindo parcelas confirmadas)
+4. Se necessário, consulte diretamente no painel do gateway com o `providerPaymentId` ou `installmentGroupId`
