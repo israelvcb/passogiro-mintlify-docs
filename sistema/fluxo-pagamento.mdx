@@ -206,6 +206,22 @@ flowchart LR
 
 O redirect é apenas um sinal de "o atleta voltou". A confirmação real sempre vem do webhook — o `CARD_CONFIRMING` garante que o atleta veja o resultado correto mesmo se o webhook chegar milissegundos depois do redirect ou se ele fechar a aba e voltar mais tarde.
 
+### PAYMENT_PENDING — checkout em aberto
+
+Quando o atleta abre `/pagamento/{id}` **sem** o parâmetro `?status=...` (por exemplo, fechou a aba durante o checkout externo e voltou mais tarde), o frontend detecta se há um pagamento de cartão com `checkoutUrl` ativo em `AWAITING_PAYMENT` e entra no estado `PAYMENT_PENDING`:
+
+- Exibe **"Aguardando pagamento"** — informa que há um checkout em andamento
+- Polling ativo: confirma automaticamente quando o webhook chegar
+- Botão **"Trocar método de pagamento"** retorna ao SELECT para iniciar novo pagamento
+
+<Info>
+Ao clicar em "Trocar método de pagamento" a partir de `PAYMENT_PENDING`, a seleção de método (cartão) é mantida — apenas o estado da tela muda para SELECT. O atleta pode então escolher PIX ou confirmar novo checkout de cartão.
+</Info>
+
+### CARD_CONFIRMING via internalStatus PROCESSING
+
+Além do retorno via `?status=paid`, o estado `CARD_CONFIRMING` também é ativado quando o polling retorna `internalStatus = PROCESSING`. Isso cobre o caso em que o gateway está processando o pagamento (ex: análise antifraude em andamento) sem ter emitido o webhook de confirmação ainda.
+
 ---
 
 ## Sanitização de texto nos gateways
@@ -253,6 +269,39 @@ flowchart LR
 |-------------------|---------------------------|
 | Inscrição nova | `{registrationId}` |
 | Diferença de troca de categoria | `{registrationId}-change-{changeId}` |
+
+Erros relacionados ao `correlationId` que o frontend pode receber como tipo `GENERIC` (exibidos como erro inline na tela de seleção, sem redirecionar para uma tela de erro):
+
+| Erro | Causa |
+|------|-------|
+| `INVALID_CORRELATION_ID` | O `correlationId` não corresponde a nenhum formato esperado pelo backend |
+| `PAYMENT_PROCESSING` | Já existe um pagamento em estado `PROCESSING` para esta inscrição — aguardar conclusão antes de iniciar novo |
+
+---
+
+## internalStatus e obs
+
+### internalStatus
+
+O campo `internalStatus` retornado pelo `checkPaymentStatus` representa o status **interno** do sistema para o pagamento — independente do código raw retornado pelo gateway. O frontend o usa para determinar o status efetivo:
+
+| `internalStatus` | Comportamento no frontend |
+|------------------|---------------------------|
+| `EXPIRED` | Sobreescreve o status do gateway — exibe tela de expirado |
+| `CANCELLED` | Sobreescreve o status do gateway — exibe tela de cancelado |
+| `PROCESSING` | Frontend entra em `CARD_CONFIRMING` — "Confirmando pagamento..." |
+| Demais | Frontend usa o status do gateway (`result.status`) como-é |
+
+**Por que é necessário:** provedores de gateway retornam códigos proprietários (ex: `REPROVED_BY_RISK_ANALYSIS`) que o frontend não reconhece. O `internalStatus` normaliza esses valores antes de chegarem ao cliente.
+
+### obs
+
+O campo `obs` é um texto livre opcional registrado pelo backend em transições de estado relevantes (especialmente `CANCELLED`, `PROCESSING`, `ERROR`). Quando presente, é retornado no payload de `initiatePayment` / `getOrInitiatePaymentByToken` e exibido na tela **"Pagamento não confirmado"** como motivo para o atleta.
+
+Exemplos de valores registrados pelos adapters de gateway:
+- `"Reprovado por análise de risco"`
+- `"Dados do cartão inválidos"`
+- `"Limite de crédito insuficiente"`
 
 ---
 

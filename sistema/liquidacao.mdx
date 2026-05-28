@@ -59,6 +59,10 @@ Uma tarefa agendada roda diariamente e processa todos os pagamentos de cartão c
 2. Decrementa `totalPendingClearance` pelo valor líquido
 3. Incrementa `totalNetReceived` pelo mesmo valor
 
+<Info>
+O cron utiliza **lock distribuído** para garantir execução única mesmo em deployments multi-instância. Se uma instância já estiver processando o lote, as demais aguardam sem processar em paralelo — eliminando risco de duplo crédito.
+</Info>
+
 ---
 
 ## Conta financeira do evento (EventAccount)

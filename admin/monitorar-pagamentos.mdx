@@ -26,10 +26,15 @@ Cada transação exibe:
 - Atleta e inscrição
 - Valor bruto, taxa de plataforma, taxa de gateway (`gatewayFeeAmount`), valor líquido
 - Gateway utilizado e método (PIX / Cartão)
-- Status do pagamento (`PAID`, `AWAITING_PAYMENT`, `EXPIRED`, etc.)
+- `internalStatus` — status interno do sistema (`AWAITING_PAYMENT`, `PROCESSING`, `PAID`, `COURTESY`, `EXPIRED`, `CANCELLED`, `INVALIDATED`, `REFUNDED`, `ERROR`)
 - Status de liquidação (`clearanceStatus`): `IMMEDIATE`, `PENDING`, `CLEARED`
 - `availableAt` — data prevista de liberação (cartão em hold)
+- `obs` — motivo registrado pelo backend em transições relevantes (ex: razão de CANCELLED ou PROCESSING); visível para auditoria e exibido ao atleta quando aplicável
 - Data/hora
+
+<Info>
+O `internalStatus` é o estado canônico do pagamento no sistema. Pode diferir do status raw retornado pelo gateway (ex: `REPROVED_BY_RISK_ANALYSIS` no gateway → `internalStatus = CANCELLED` no sistema). Use-o como fonte de verdade em investigações.
+</Info>
 
 ## Filtros
 
