@@ -119,6 +119,8 @@
             "group": "Pagamentos",
             "pages": [
               "sistema/fluxo-pagamento",
+              "sistema/telas-pagamento",
+              "sistema/estados-pagamento",
               "sistema/taxas-calculos",
               "sistema/liquidacao"
             ]
