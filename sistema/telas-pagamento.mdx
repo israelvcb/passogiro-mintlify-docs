@@ -12,7 +12,7 @@ A página `/pagamento/{registrationId}` é um único componente que renderiza te
 ```mermaid
 flowchart TD
   LOAD["Página carrega\n(registrationId)"] --> CHECK{Verifica\nregistrationPaymentSummary\n+ checkPaymentStatus}
-  CHECK -->|PAID / CATEGORY_CHANGED| SUCCESS["PIX_PAID\n✅ Sucesso com comprovante"]
+  CHECK -->|PAID / CATEGORY_CHANGED| SUCCESS["PAYMENT_SUCCESS\n✅ Sucesso com comprovante"]
   CHECK -->|Erro terminal| ERR["PixErrorView\n❌ Tela de bloqueio"]
   CHECK -->|PIX ativo| QR["PIX_QR\n📱 QR Code"]
   CHECK -->|Cartão AWAITING_PAYMENT\n+ sem checkoutUrl| CF["CARD_CONFIRMING\n⏳ Spinner"]
@@ -22,13 +22,13 @@ flowchart TD
   SEL -->|"Gerar QR Code PIX"| QR
   SEL -->|"Pagar com Cartão"| CF
   QR -->|Polling PAID| SUCCESS
-  QR -->|Polling EXPIRED / timer| EXP["PIX_EXPIRED\n⏰ QR expirado"]
+  QR -->|Polling EXPIRED / timer| EXP["PAYMENT_FAILED\n⏰ QR expirado"]
   QR -->|Polling CANCELLED| EXP
   EXP -->|"Gerar novo PIX"| SEL
   CF -->|Polling PAID| SUCCESS
   CF -->|Polling PROCESSING| CP["CARD_PENDING\n⌛ Em processamento"]
   CF -->|"2 min sem resposta"| CP
-  CF -->|Polling CANCELLED| EXP2["PIX_EXPIRED\n❌ Pagamento não confirmado"]
+  CF -->|Polling CANCELLED| EXP2["PAYMENT_FAILED\n❌ Pagamento não confirmado"]
   CP -->|Polling PAID| SUCCESS
   CP -->|Polling CANCELLED| EXP2
   PP -->|Polling PAID| SUCCESS
@@ -80,10 +80,10 @@ O resumo de valores (previewBreakdown) é chamado automaticamente ao abrir o SEL
 **Polling:** inicia com delay de **10 segundos**; intervalo decai 25% a cada consulta (15 s → 11,25 s → … → 5 s mínimo); disparo imediato ao voltar para a aba do navegador.
 
 **Transições automáticas:**
-- Polling retorna `PAID` → `PIX_PAID`
-- Polling retorna `EXPIRED` / `CANCELLED` → `PIX_EXPIRED` ("Código PIX expirado")
+- Polling retorna `PAID` → `PAYMENT_SUCCESS`
+- Polling retorna `EXPIRED` / `CANCELLED` → `PAYMENT_FAILED` ("Código PIX expirado")
 - Polling retorna `REGISTRATION_EXPIRED` / `REGISTRATION_CANCELLED` / `REGISTRATION_REFUNDED` → `PixErrorView` correspondente
-- Timer de expiração chega a zero → `PIX_EXPIRED`
+- Timer de expiração chega a zero → `PAYMENT_FAILED`
 
 ---
 
@@ -103,9 +103,9 @@ O resumo de valores (previewBreakdown) é chamado automaticamente ao abrir o SEL
 **Polling:** inicia **imediatamente** (sem delay); intervalo base 5 s com decaimento de 25%, mínimo 5 s.
 
 **Transições automáticas:**
-- Polling retorna `PAID` → `PIX_PAID`
+- Polling retorna `PAID` → `PAYMENT_SUCCESS`
 - Polling retorna `PROCESSING` → `CARD_PENDING` (imediato, sem esperar timer)
-- Polling retorna `CANCELLED` → `PIX_EXPIRED` ("Pagamento não confirmado")
+- Polling retorna `CANCELLED` → `PAYMENT_FAILED` ("Pagamento não confirmado")
 - Timer de 2 minutos sem resposta → `CARD_PENDING`
 
 ---
@@ -130,8 +130,8 @@ O resumo de valores (previewBreakdown) é chamado automaticamente ao abrir o SEL
 **Polling:** continua ativo com intervalo de 5 s.
 
 **Transições automáticas:**
-- Polling retorna `PAID` → `PIX_PAID`
-- Polling retorna `CANCELLED` → `PIX_EXPIRED` ("Pagamento não confirmado")
+- Polling retorna `PAID` → `PAYMENT_SUCCESS`
+- Polling retorna `CANCELLED` → `PAYMENT_FAILED` ("Pagamento não confirmado")
 
 ---
 
@@ -153,8 +153,8 @@ O resumo de valores (previewBreakdown) é chamado automaticamente ao abrir o SEL
 **Polling:** ativo, intervalo de 15 s (modo PIX).
 
 **Transições automáticas:**
-- Polling retorna `PAID` → `PIX_PAID`
-- Polling retorna `CANCELLED` ou `EXPIRED` com `paymentMethod = CREDIT_CARD` → `PIX_EXPIRED` ("Pagamento não confirmado")
+- Polling retorna `PAID` → `PAYMENT_SUCCESS`
+- Polling retorna `CANCELLED` ou `EXPIRED` com `paymentMethod = CREDIT_CARD` → `PAYMENT_FAILED` ("Pagamento não confirmado")
 
 <Note>
 Este estado cobre inscrições criadas com a versão anterior da plataforma (checkout externo). Para eventos configurados com cobrança direta (versão atual), este estado raramente ocorre.
@@ -162,7 +162,7 @@ Este estado cobre inscrições criadas com a versão anterior da plataforma (che
 
 ---
 
-### PIX_PAID — Pagamento confirmado (sucesso)
+### PAYMENT_SUCCESS — Pagamento confirmado (sucesso)
 
 **Condição:** Polling detectou `PAID`, ou `registrationStatus = PAID` / `CATEGORY_CHANGED`, ou `registrationPaymentSummary` retornou status PAID na carga.
 
@@ -182,7 +182,7 @@ Este estado cobre inscrições criadas com a versão anterior da plataforma (che
 
 ---
 
-### PIX_EXPIRED — QR expirado ou pagamento recusado
+### PAYMENT_FAILED — QR expirado ou pagamento recusado
 
 **Condição:** Polling retorna `EXPIRED` ou `CANCELLED` (para PIX), ou cartão recusado/cancelado (para cartão).
 
@@ -307,7 +307,7 @@ Estas telas são exibidas quando a inscrição está em um estado que **impede q
 | Botão | "Ver Minhas Inscrições" |
 
 <Note>
-Variante especial: quando a cortesia é detectada via `REGISTRATION_ALREADY_PAID` no modo público, o sistema carrega e exibe o **comprovante completo** (tela `PIX_PAID`) em vez desta tela de bloqueio.
+Variante especial: quando a cortesia é detectada via `REGISTRATION_ALREADY_PAID` no modo público, o sistema carrega e exibe o **comprovante completo** (tela `PAYMENT_SUCCESS`) em vez desta tela de bloqueio.
 </Note>
 
 ---
@@ -382,9 +382,9 @@ Os erros `PAYMENT_PROCESSING` e `INVALID_CORRELATION_ID` **não** geram uma PixE
 | CARD_CONFIRMING | ❌ | ✅ | Cobrança direta submetida |
 | CARD_PENDING | ❌ | ✅ | 2 min ou PROCESSING detectado |
 | PAYMENT_PENDING | ❌ | ✅ | Checkout externo em aberto (legado) |
-| PIX_PAID | ✅ | ✅ | Qualquer pagamento confirmado |
-| PIX_EXPIRED (QR) | ✅ | ❌ | PIX expirou ou cancelado |
-| PIX_EXPIRED (Cartão) | ❌ | ✅ | Cartão recusado |
+| PAYMENT_SUCCESS | ✅ | ✅ | Qualquer pagamento confirmado |
+| PAYMENT_FAILED (QR) | ✅ | ❌ | PIX expirou ou cancelado |
+| PAYMENT_FAILED (Cartão) | ❌ | ✅ | Cartão recusado |
 | NOT_FOUND | ✅ | ✅ | ID inválido |
 | FORBIDDEN | ✅ | ✅ | Sem permissão |
 | REGISTRATION_EXPIRED | ✅ | ✅ | Inscrição expirada |
