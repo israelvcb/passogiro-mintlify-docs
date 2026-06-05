@@ -20,8 +20,8 @@ flowchart LR
   end
   subgraph CARD ["Cartão de Crédito"]
     C1[Atleta escolhe Cartão] --> C2[previewBreakdown N×]
-    C2 --> C3[Preencher endereço]
-    C3 --> C4[Checkout externo]
+    C2 --> C3[Preencher dados do cartão]
+    C3 --> C4[Cobrança direta no backend]
     C4 --> C5[Webhook gateway cartão]
     C5 --> C6[✅ PAID\nhold ~32 dias]
     C6 --> C7[Cron libera saldo]
@@ -55,14 +55,16 @@ flowchart LR
         5. Retorna QR Code + código copia-cola
       </Step>
       <Step title="QR Code exibido — validade 30 min">
-        Frontend exibe o QR Code e fica ouvindo via WebSocket.
+        Frontend exibe o QR Code com timer de contagem regressiva.
+        Polling inicia com **delay inicial de 10 segundos** — aguarda o atleta pagar antes da primeira consulta.
+        O intervalo entre consultas **decai 25% a cada poll**, com mínimo de 5 s.
       </Step>
       <Step title="Webhook confirma">
         Backend recebe `POST /payments/webhook/{provider}`, chama `markPaymentAsPaid()`.
         Saldo creditado em `totalNetReceived` **imediatamente**.
       </Step>
       <Step title="Inscrição confirmada">
-        Frontend recebe via WebSocket, exibe tela de sucesso e comprovante.
+        Polling detecta o status `PAID`, exibe tela de sucesso e comprovante com QR Code de check-in.
       </Step>
     </Steps>
   </Tab>
@@ -83,10 +85,11 @@ flowchart LR
       GW-->>BE: QR Code + expiresAt
       BE-->>FE: QR Code
       FE-->>Atleta: Exibe QR Code (30 min)
+      Note over FE: Polling: 10 s delay, depois decaimento 25%
       Atleta->>GW: Paga no app do banco
       GW->>BE: POST /payments/webhook/{provider}
       BE->>BE: markPaymentAsPaid()
-      BE-->>FE: WebSocket: PAID
+      Note over FE,BE: Próximo poll detecta PAID
       FE-->>Atleta: Tela de sucesso
     ```
   </Tab>
@@ -100,6 +103,8 @@ flowchart LR
 
 ## Fluxo Cartão de Crédito
 
+O cartão é processado **diretamente no backend** — o atleta preenche os dados do cartão na própria página do Passo Giro, sem redirecionamento para checkout externo.
+
 <Tabs>
   <Tab title="Passo a passo" icon="list-ol">
     <Steps>
@@ -109,20 +114,26 @@ flowchart LR
       <Step title="Preencher endereço e escolher parcelas">
         Endereço completo é **obrigatório** pelo gateway de cartão — salvo no perfil do atleta antes de prosseguir.
       </Step>
+      <Step title="Preencher dados do cartão">
+        O atleta informa nome do titular, número, validade e CVV diretamente na tela do Passo Giro.
+      </Step>
       <Step title="Clicar em 'Pagar com Cartão'">
-        Frontend chama `initiatePayment(method=CREDIT_CARD, installments=N)`. Backend:
+        Frontend chama `POST /registrations/card-charge`. Backend:
 
         1. Valida o cupom (se houver)
         2. Calcula via FeeEngine (com gross-up)
-        3. Gateway de cartão → cria sessão de checkout hospedada
+        3. Submete cobrança diretamente ao gateway de cartão
         4. Persiste `Payment` com status `AWAITING_PAYMENT`
-        5. Retorna URL de checkout externo
-      </Step>
-      <Step title="Redireciona para checkout externo">
-        Frontend redireciona para a URL hospedada pelo gateway (`window.location.href = checkoutUrl`). Ao concluir, cancelar ou a sessão expirar, o gateway redireciona de volta — veja [Retorno do checkout externo](#retorno-do-checkout-externo).
+        5. Retorna indicação de pendente
+
+        Se o backend retornar HTTP 504 (timeout de gateway), o frontend entra em `CARD_CONFIRMING` igualmente — a cobrança pode ter sido processada mesmo sem resposta.
       </Step>
       <Step title="Aguardando confirmação (CARD_CONFIRMING)">
-        Ao retornar com `?status=paid`, o frontend entra em `CARD_CONFIRMING`: spinner ativo, WebSocket e polling escutando. O webhook pode chegar antes mesmo de o atleta ver a tela.
+        Frontend entra em `CARD_CONFIRMING` com spinner. Polling inicia **imediatamente** (sem delay inicial) — o atleta acabou de pagar, confirmação tende a chegar em segundos.
+        Intervalo inicial: 5 s com decaimento de 25%, mínimo 5 s.
+      </Step>
+      <Step title="Análise de risco (PROCESSING) — se aplicável">
+        Se o gateway colocar o pagamento em análise antifraude, o backend retorna `internalStatus = PROCESSING`. O frontend avança imediatamente para **CARD_PENDING** exibindo: *"Seu pagamento está em análise de risco pela operadora. Isso pode levar alguns minutos."*
       </Step>
       <Step title="Webhook confirma">
         Backend recebe `POST /payments/webhook/{provider}`, chama `markPaymentAsPaid()`.
@@ -147,15 +158,15 @@ flowchart LR
       FE->>BE: previewPaymentBreakdown(CARD, N, coupon?)
       BE-->>FE: breakdown com gross-up
       Atleta->>FE: Confirma endereço + parcelas
-      FE->>BE: initiatePayment(CARD, N)
-      BE->>GW: Criar checkout
-      GW-->>BE: checkoutUrl
-      BE-->>FE: checkoutUrl
-      FE-->>Atleta: Redireciona para gateway
-      Atleta->>GW: Preenche dados do cartão
+      Atleta->>FE: Preenche dados do cartão
+      FE->>BE: POST /registrations/card-charge
+      BE->>GW: Cobrança direta (direct charge)
+      GW-->>BE: Resultado (aprovado / análise)
+      BE-->>FE: CARD_CONFIRMING
+      Note over FE: Polling imediato, 5 s intervalos
       GW->>BE: POST /payments/webhook/{provider}
       BE->>BE: markPaymentAsPaid() → totalPendingClearance
-      BE-->>FE: WebSocket: PAID
+      Note over FE,BE: Polling detecta PAID
       FE-->>Atleta: Tela de sucesso
       Note over Cron,BE: Após settlementHoldDays dias
       Cron->>BE: Verificar availableAt ≤ agora
@@ -170,57 +181,82 @@ flowchart LR
 
 ---
 
-## Retorno do checkout externo
-
-Gateways que usam checkout hospedado redirecionam o atleta de volta para a tela de pagamento ao final — seja por confirmação, cancelamento ou expiração. As URLs de retorno são construídas **pelo backend** a partir de variáveis de ambiente e nunca aceitas do cliente:
-
-```
-/pagamento/{registrationId}?status=paid&method=CREDIT_CARD
-/pagamento/{registrationId}?status=abandoned&method=CREDIT_CARD
-/pagamento/{registrationId}?status=expired&method=CREDIT_CARD
-```
-
-O frontend lê os dois params ao montar e limpa a URL via `replaceState` para evitar reprocessamento no histórico do browser.
-
-| `status` | Comportamento |
-|----------|--------------|
-| `paid` | Entra em `CARD_CONFIRMING` — spinner + WebSocket/polling ativos. Se o webhook confirmar em < 2 min → tela de sucesso. Após 2 min sem resposta → `CARD_PENDING` ("em processamento — sua inscrição será confirmada automaticamente"). |
-| `abandoned` | Volta ao SELECT com **banner rose**: "Pagamento não concluído — sua inscrição está reservada, tente novamente quando quiser." |
-| `expired` | Volta ao SELECT com **banner âmbar**: "A sessão de pagamento expirou — inicie um novo pagamento abaixo." |
-
-O param `method` define qual aba fica pré-selecionada ao voltar ao SELECT. Qualquer gateway futuro que use redirect funciona pelo mesmo mecanismo sem mudança no frontend.
-
-<Info>
-O valor `status=success` (gerado por versões anteriores) é aceito como sinônimo de `paid` para compatibilidade com links em trânsito.
-</Info>
-
-### Por que não depender só do redirect?
+## Estados do checkout de cartão
 
 ```mermaid
 flowchart LR
-  R["?status=paid"] --> C["CARD_CONFIRMING\nWebSocket + polling"]
-  C -->|"Webhook < 2 min"| S["✅ Sucesso"]
-  C -->|"2 min sem webhook"| P["CARD_PENDING\n'em processamento'"]
-  P -->|"Webhook chega depois"| S
+  C["POST /card-charge"] --> CF["CARD_CONFIRMING\nPolling imediato"]
+  CF -->|"Webhook < 2 min"| S["✅ Sucesso"]
+  CF -->|"PROCESSING detectado"| CP["CARD_PENDING\n'análise de risco'"]
+  CF -->|"2 min sem resposta"| CP
+  CP -->|"Webhook chega depois"| S
+  CP -->|"10+ min sem resposta"| M["Aviso de suporte"]
+  CF -->|"CANCELLED / DECLINED"| E["❌ Pagamento não confirmado\nbotão 'Tentar novamente'"]
+  CP -->|"CANCELLED / DECLINED"| E
 ```
 
-O redirect é apenas um sinal de "o atleta voltou". A confirmação real sempre vem do webhook — o `CARD_CONFIRMING` garante que o atleta veja o resultado correto mesmo se o webhook chegar milissegundos depois do redirect ou se ele fechar a aba e voltar mais tarde.
+### CARD_CONFIRMING
 
-### PAYMENT_PENDING — checkout em aberto
+Estado ativo logo após a submissão do cartão. Exibe spinner e texto *"Confirmando pagamento..."*. O polling inicia imediatamente (sem delay).
 
-Quando o atleta abre `/pagamento/{id}` **sem** o parâmetro `?status=...` (por exemplo, fechou a aba durante o checkout externo e voltou mais tarde), o frontend detecta se há um pagamento de cartão com `checkoutUrl` ativo em `AWAITING_PAYMENT` e entra no estado `PAYMENT_PENDING`:
+Se `internalStatus = PROCESSING` for detectado no polling, o frontend avança para `CARD_PENDING` **sem esperar os 2 minutos do timer**.
+
+Após 2 minutos sem resposta, o frontend transita automaticamente para `CARD_PENDING`.
+
+### CARD_PENDING
+
+Estado de espera longa. Exibe *"Pagamento em processamento"*. Polling continua ativo (5 s, decaimento, mínimo 5 s).
+
+- Se `internalStatus = PROCESSING`: exibe bloco informativo *"A operadora está verificando a transação por segurança."*
+- Após **10 minutos** sem confirmação: exibe aviso âmbar *"Estamos aguardando há mais de N minuto(s). Se não receber a confirmação em breve, entre em contato com o suporte informando seu número de inscrição."*
+
+### Cartão recusado / cancelado
+
+Quando o polling retorna `CANCELLED` ou `EXPIRED` para um pagamento de cartão, o frontend exibe a tela **"Pagamento não confirmado"** com botão *"Tentar novamente"*. O motivo da recusa (campo `obs`) é exibido quando disponível (ex: *"Saldo insuficiente"*, *"Dados do cartão inválidos"*).
+
+---
+
+## PAYMENT_PENDING — checkout em aberto (legado)
+
+Quando o atleta abre `/pagamento/{id}` **sem** o parâmetro `?status=...` (por exemplo, fechou a aba durante um checkout externo gerado por versão anterior da plataforma) e há um pagamento de cartão com `checkoutUrl` ativo em `AWAITING_PAYMENT`, o frontend entra no estado `PAYMENT_PENDING`:
 
 - Exibe **"Aguardando pagamento"** — informa que há um checkout em andamento
 - Polling ativo: confirma automaticamente quando o webhook chegar
 - Botão **"Trocar método de pagamento"** retorna ao SELECT para iniciar novo pagamento
 
 <Info>
-Ao clicar em "Trocar método de pagamento" a partir de `PAYMENT_PENDING`, a seleção de método (cartão) é mantida — apenas o estado da tela muda para SELECT. O atleta pode então escolher PIX ou confirmar novo checkout de cartão.
+Para eventos com a configuração atual (cobrança direta), este estado raramente ocorrerá. Ele cobre inscrições criadas com a versão anterior da plataforma que usava checkout externo.
 </Info>
 
-### CARD_CONFIRMING via internalStatus PROCESSING
+---
 
-Além do retorno via `?status=paid`, o estado `CARD_CONFIRMING` também é ativado quando o polling retorna `internalStatus = PROCESSING`. Isso cobre o caso em que o gateway está processando o pagamento (ex: análise antifraude em andamento) sem ter emitido o webhook de confirmação ainda.
+## Polling de status
+
+O frontend consulta periodicamente o status do pagamento durante o fluxo ativo. O polling **não usa WebSocket** — é baseado em requisições HTTP periódicas.
+
+### Comportamento por método
+
+| Método | Delay inicial | Intervalo base | Decaimento | Mínimo |
+|--------|---------------|----------------|------------|--------|
+| PIX | 10 s | 15 s | 25% por poll | 5 s |
+| Cartão | 0 s (imediato) | 5 s | 25% por poll | 5 s |
+
+O decaimento reduz o intervalo a cada consulta bem-sucedida:
+```
+15 s → 11,25 s → 8,44 s → 6,33 s → 5 s (mínimo)
+```
+
+### Page Visibility
+
+Quando o atleta troca de aplicativo (ex: para pagar no app do banco), o polling é **pausado**. Ao retornar à aba do navegador, uma consulta é disparada **imediatamente** — sem esperar o próximo intervalo. Isso garante que o atleta veja a confirmação instantaneamente ao voltar.
+
+### Parada do polling
+
+O polling para automaticamente quando:
+- Status terminal é detectado: `PAID`, `EXPIRED`, `CANCELLED`, `REFUNDED`, `REGISTRATION_EXPIRED`
+- Erro fatal de rede (não-transiente, ex: `UNAUTHENTICATED`)
+
+Erros transientes (`INTERNAL_SERVER_ERROR`, `NETWORK_ERROR`, falha de conexão) **não param** o polling — a próxima tentativa ocorre normalmente.
 
 ---
 
@@ -288,20 +324,24 @@ O campo `internalStatus` retornado pelo `checkPaymentStatus` representa o status
 | `internalStatus` | Comportamento no frontend |
 |------------------|---------------------------|
 | `EXPIRED` | Sobreescreve o status do gateway — exibe tela de expirado |
-| `CANCELLED` | Sobreescreve o status do gateway — exibe tela de cancelado |
-| `PROCESSING` | Frontend entra em `CARD_CONFIRMING` — "Confirmando pagamento..." |
+| `CANCELLED` | Sobreescreve o status do gateway — exibe tela de cancelado/pagamento não confirmado |
+| `PROCESSING` | Se em `CARD_CONFIRMING` → avança imediatamente para `CARD_PENDING` com aviso de análise de risco |
 | Demais | Frontend usa o status do gateway (`result.status`) como-é |
 
 **Por que é necessário:** provedores de gateway retornam códigos proprietários (ex: `REPROVED_BY_RISK_ANALYSIS`) que o frontend não reconhece. O `internalStatus` normaliza esses valores antes de chegarem ao cliente.
 
 ### obs
 
-O campo `obs` é um texto livre opcional registrado pelo backend em transições de estado relevantes (especialmente `CANCELLED`, `PROCESSING`, `ERROR`). Quando presente, é retornado no payload de `initiatePayment` / `getOrInitiatePaymentByToken` e exibido na tela **"Pagamento não confirmado"** como motivo para o atleta.
+O campo `obs` é um texto livre opcional registrado pelo backend em transições de estado relevantes (especialmente `CANCELLED`, `PROCESSING`, `ERROR`). Quando presente, é retornado no payload de `checkPaymentStatus` e exibido na tela **"Pagamento não confirmado"** como motivo para o atleta.
 
 Exemplos de valores registrados pelos adapters de gateway:
 - `"Reprovado por análise de risco"`
 - `"Dados do cartão inválidos"`
 - `"Limite de crédito insuficiente"`
+
+### Snapshot platformFeeMode
+
+No momento da criação do pagamento, o `platformFeeMode` ativo no evento é salvo como snapshot no registro `Payment`. Isso garante que a exibição histórica (ex: aba Financeiro do organizador) mostre o modo correto mesmo que o organizador altere a configuração posteriormente.
 
 ---
 
@@ -340,11 +380,11 @@ sequenceDiagram
 
 ### Correção de `totalInstallments`
 
-O atleta seleciona no frontend o **número máximo de parcelas** que aceita. No checkout externo do gateway, ele pode escolher um número menor. O webhook da primeira parcela dispara uma consulta à API do gateway para obter o total real:
+O atleta seleciona no frontend o **número máximo de parcelas** que aceita. No checkout direto do gateway, ele pode confirmar um número menor. O webhook da primeira parcela dispara uma consulta à API do gateway para obter o total real:
 
 ```
 Frontend informa: 3×
-Atleta escolhe no checkout: 2×
+Atleta escolhe no gateway: 2×
 Webhook parcela 1 chega → backend consulta grupo → installmentCount = 2
 Payment.totalInstallments atualizado: 3 → 2
 ```
@@ -356,7 +396,7 @@ Isso garante que `totalInstallments` reflita sempre a escolha real do atleta, e 
 | Situação | Comportamento |
 |----------|--------------|
 | Webhook duplicado da **parcela 1** | Ignorado — `internalStatus = PAID` bloqueia reprocessamento antes de qualquer alteração em `totalPendingClearance` |
-| Webhook duplicado de **parcela 2+** | `totalPendingClearance` não é afetado (parcelas 2+ são somente auditoria). Risco de `paidInstallments` incrementar novamente — na prática, gateways não reenviam confirmações já processadas |
+| Webhook duplicado de **parcela 2+** | `totalPendingClearance` não é afetado (parcelas 2+ são somente auditoria). O campo `paidInstallments` pode ser incrementado novamente em caso de reenvio pelo gateway |
 | Parcelas **fora de ordem** | Seguro — todos os campos usam `{ increment }`, não SET absoluto |
 
 <Info>
@@ -397,5 +437,5 @@ O organizador vê o valor total em **"Aguardando liquidação"** desde a confirm
 | `PAID` | Pagamento confirmado via webhook |
 | `COURTESY` | Cupom FREE — confirmação direta, sem webhook |
 | `EXPIRED` | Prazo expirou sem pagamento |
-| `CANCELLED` | Inscrição cancelada |
-| `REFUNDED` | Valor devolvido ao atleta |
+| `CANCELLED` | Inscrição cancelada (manualmente ou por gateway) |
+| `REFUNDED` | Valor devolvido ao atleta — inscrição inativa |

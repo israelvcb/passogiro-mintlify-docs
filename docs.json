@@ -124,6 +124,12 @@
             ]
           },
           {
+            "group": "Integrações",
+            "pages": [
+              "api-reference/endpoint/webhook"
+            ]
+          },
+          {
             "group": "Cupons",
             "pages": [
               "sistema/cupons"

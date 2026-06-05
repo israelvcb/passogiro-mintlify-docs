@@ -38,12 +38,14 @@ Eventos sem configuração no banco usam os **defaults de variáveis de ambiente
 
 ## Gateways suportados
 
-| Identificador | Método | Tipo de checkout |
+| Identificador | Método | Modo de cobrança |
 |---------------|--------|-----------------|
-| `woovi` | PIX | INLINE — QR Code exibido na tela |
-| `asaas` | Cartão de crédito | REDIRECT — checkout hospedado |
+| `woovi` | PIX | INLINE — QR Code exibido na tela do Passo Giro |
+| `asaas` | Cartão de crédito | INLINE — dados preenchidos na tela do Passo Giro, cobrança direta |
 
 <Info>
+O gateway `asaas` realiza cobrança direta (*direct charge*): o atleta preenche os dados do cartão na própria interface do Passo Giro, sem redirecionamento para checkout externo. O backend submete a cobrança via `POST /registrations/card-charge` → `AsaasAdapter.chargeCardDirect`.
+
 Outros gateways podem ser adicionados implementando a interface `PaymentGatewayPort` no backend. Nenhuma alteração no frontend é necessária enquanto o `renderMode` for o mesmo.
 </Info>
 

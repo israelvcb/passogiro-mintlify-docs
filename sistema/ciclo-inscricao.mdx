@@ -49,10 +49,10 @@ stateDiagram-v2
   <Accordion title="PENDING → AWAITING_PAYMENT" icon="credit-card">
     Quando o atleta escolhe a forma de pagamento e confirma, o sistema:
 
-    1. Cria a cobrança no gateway (Woovi ou Asaas)
-    2. Armazena o `externalPaymentId`
+    1. Cria a cobrança no gateway (Woovi para PIX, Asaas para cartão)
+    2. Armazena o `providerPaymentId`
     3. Atualiza o status para `AWAITING_PAYMENT`
-    4. Retorna o QR Code (PIX) ou URL de checkout (Cartão)
+    4. Retorna o QR Code (PIX) ou confirmação de cobrança direta (Cartão)
   </Accordion>
 
   <Accordion title="PENDING → COURTESY" icon="gift">
@@ -80,7 +80,7 @@ stateDiagram-v2
     Se o prazo de pagamento expirar:
 
     - **PIX**: 30 minutos (controlado pela Woovi)
-    - **Cartão**: conforme expiração da sessão Asaas
+    - **Cartão**: a cobrança expira conforme a política do gateway; o webhook de expiração é recebido normalmente
 
     O gateway envia webhook de expiração. O backend atualiza para `EXPIRED` e a vaga na categoria é **liberada automaticamente**.
   </Accordion>

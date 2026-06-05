@@ -194,6 +194,37 @@ Evento 5KM Feminino · Base **R$50,00** · Taxa plataforma **R$4,70** · Taxa ga
 
 ---
 
+## Taxas padrão por evento
+
+Cada evento tem um `EventAccount` com as seguintes taxas configuradas pelo admin no momento da criação (ou em eventos existentes sem configuração):
+
+| Campo | Valor padrão |
+|-------|-------------|
+| `planRate` | **R$7,00** (700 centavos) — taxa da plataforma por inscrição |
+| `categoryChangeRate` | **R$4,50** (450 centavos) — taxa da plataforma por troca de categoria |
+| `organizerCategoryChangeFee` | `0` — taxa extra cobrada pelo organizador ao atleta na troca (opcional) |
+| `platformFeeMode` | `ABSORB` — organizador absorve a taxa por padrão |
+
+O campo `organizerCategoryChangeFee` é sempre repassado ao atleta independentemente do `platformFeeMode` — é uma taxa do organizador, não da plataforma.
+
+---
+
+## Snapshot de platformFeeMode
+
+Quando um pagamento é criado, o `platformFeeMode` vigente no evento é salvo como **snapshot** no registro `Payment`. Isso garante que:
+
+- A aba Financeiro do organizador sempre exiba o modo correto para cada inscrição, mesmo que a configuração do evento seja alterada depois
+- Reembolsos e estornos usem o modo original do pagamento
+- Auditorias históricas sejam precisas
+
+```
+Evento: platformFeeMode = PASS_TO_PAYER (configuração atual)
+Inscrição A (paga há 2 meses): Payment.platformFeeMode = ABSORB (snapshot original)
+Inscrição B (paga hoje):        Payment.platformFeeMode = PASS_TO_PAYER (snapshot atual)
+```
+
+---
+
 ## Configuração por evento
 
 Cada evento pode ter regras próprias via `PaymentMethodConfig` + `PaymentFeeRule`. Se não houver configuração, o sistema usa os defaults de variáveis de ambiente.
